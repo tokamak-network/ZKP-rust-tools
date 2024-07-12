@@ -158,22 +158,24 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
 {
     type Commitment = P::G1Point;
 
-    //not compeleted 
+    //not compeleted , should return 2 commitment, one for q_xy another for q_y
     fn commit(&self, bp: &BivariatePolynomial<FieldElement<F>>, p: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment {
         
-        let coefficients: Vec<_> = bp.flatten_out()
+        // let coefficients_y: Vec<_> = 
+        
+
+        let coefficients_x_y: Vec<_> = bp.flatten_out()
             .iter()
             .map(|coefficient| coefficient.representative())
             .collect();
         msm(
-            &coefficients,
-            &self.srs.powers_main_group[..coefficients.len()],
+            &coefficients_x_y,
+            &self.srs.powers_main_group[..coefficients_x_y.len()],
         )
         .expect("`points` is sliced by `cs`'s length")
     }
 
-    // fn commit(&self, p: )
-
+    //not compeleted , should return 2 commitment, one for q_xy another for q_y
     fn open(
         &self,
         x: &FieldElement<F>,
@@ -188,10 +190,12 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         self.commit(&q_xy,&q_y)
     }
 
+    // should accept 2 commitment instead of 1
     fn verify(
         &self,
         x: &FieldElement<F>,
         y: &FieldElement<F>,
+        evaluation: &FieldElement<F>,
         p_commitment: &Self::Commitment,
         proof: &Self::Commitment,
     ) -> bool {

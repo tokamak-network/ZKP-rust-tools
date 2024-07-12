@@ -31,6 +31,7 @@ pub trait IsCommitmentScheme<F: IsField> {
         &self,
         x: &FieldElement<F>,
         y: &FieldElement<F>,
+        evaluation: &FieldElement<F>,
         p_commitment: &Self::Commitment,
         proof: &Self::Commitment,
     ) -> bool;
