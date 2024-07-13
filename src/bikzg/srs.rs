@@ -26,8 +26,10 @@ use crate::{bipolynomial::BivariatePolynomial, G1Point};
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructuredReferenceString<G1Point, G2Point> {
+    pub dimention_x: usize, 
+    pub dimention_y: usize,
     pub powers_main_group: Vec<G1Point>,
-    pub powers_secondary_group: [G2Point; 3],// tau, theta and 1 
+    pub powers_secondary_group: [G2Point; 3],// 1 , tau, theta 
 }
 
 
@@ -36,8 +38,10 @@ where
     G1Point: IsGroup,
     G2Point: IsGroup,
 {
-    pub fn new(powers_main_group: &[G1Point], powers_secondary_group: &[G2Point; 3]) -> Self {
+    pub fn new(dim_x: usize, dim_y: usize,powers_main_group: &[G1Point], powers_secondary_group: &[G2Point; 3]) -> Self {
         Self {
+            dimention_x: dim_x, 
+            dimention_y: dim_y,
             powers_main_group: powers_main_group.into(),
             powers_secondary_group: powers_secondary_group.clone(),
         }
@@ -55,6 +59,10 @@ where
         let protocol_version: [u8; 4] = [0; 4];
 
         serialized_data.extend(&protocol_version);
+
+        add_usize(& mut serialized_data, self.dimention_x);
+        add_usize(& mut serialized_data, self.dimention_y);
+
 
         // Second 8 bytes store the amount of G1 elements to be stored, this is more than can be indexed with a 64-bit architecture, and some millions of terabytes of data if the points were compressed
         let mut main_group_len_bytes: Vec<u8> = self.powers_main_group.len().to_le_bytes().to_vec();
@@ -81,6 +89,16 @@ where
     }
 }
 
+fn add_usize(serialized_data: & mut Vec<u8>, data: usize) {
+    let mut data_bytes: Vec<u8> = data.to_le_bytes().to_vec();
+    // For data with less than 64 bits for pointers
+    // We add extra zeros at the end`
+    while data_bytes.len() < 8 { 
+        data_bytes.push(0);
+    }
+    serialized_data.extend(&data_bytes);
+}
+
 
 
 impl<G1Point, G2Point> Deserializable for StructuredReferenceString<G1Point, G2Point>
@@ -89,8 +107,34 @@ where
     G2Point: IsGroup + Deserializable,
 {
     fn deserialize(bytes: &[u8]) -> Result<Self, DeserializationError> {
-        const MAIN_GROUP_LEN_OFFSET: usize = 4;
-        const MAIN_GROUP_OFFSET: usize = 12;
+        const X_DIMENTION_LEN_START: usize = 4; 
+        const X_DIMENTION_LEN_END: usize = 12; 
+
+        const Y_DIMENTION_LEN_START: usize = 12; 
+        const Y_DIMENTION_LEN_END: usize = 20; 
+   
+        const MAIN_GROUP_LEN_OFFSET: usize = 20;
+        const MAIN_GROUP_OFFSET: usize = 28;
+
+        let x_dim_len_u64 = u64::from_le_bytes(
+            // This unwrap can't fail since we are fixing the size of the slice
+            bytes[X_DIMENTION_LEN_START..X_DIMENTION_LEN_END]
+                .try_into()
+                .unwrap(),
+        );
+
+        let x_dim_len = usize::try_from(x_dim_len_u64)
+        .map_err(|_| DeserializationError::PointerSizeError)?;
+
+        let y_dim_len_u64 = u64::from_le_bytes(
+            // This unwrap can't fail since we are fixing the size of the slice
+            bytes[Y_DIMENTION_LEN_START..Y_DIMENTION_LEN_END]
+                .try_into()
+                .unwrap(),
+        );
+
+        let y_dim_len = usize::try_from(y_dim_len_u64)
+        .map_err(|_| DeserializationError::PointerSizeError)?;
 
         let main_group_len_u64 = u64::from_le_bytes(
             // This unwrap can't fail since we are fixing the size of the slice
@@ -119,7 +163,7 @@ where
             main_group.push(point);
         }
 
-        let g2s_offset = size_g1_point * main_group_len + 12;
+        let g2s_offset = size_g1_point * main_group_len + 28;
         for i in 0..3 {
             // The second unwrap shouldn't fail since the amount of bytes is fixed
             let point = G2Point::deserialize(
@@ -133,7 +177,7 @@ where
 
         let secondary_group_slice = [secondary_group[0].clone(), secondary_group[1].clone(), secondary_group[2].clone()];
 
-        let srs = StructuredReferenceString::new(&main_group, &secondary_group_slice);
+        let srs = StructuredReferenceString::new(x_dim_len,y_dim_len,&main_group, &secondary_group_slice);
         Ok(srs)
     }
 }
@@ -159,20 +203,30 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
     type Commitment = P::G1Point;
 
     //not compeleted , should return 2 commitment, one for q_xy another for q_y
-    fn commit(&self, bp: &BivariatePolynomial<FieldElement<F>>, p: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment {
+    fn commit(&self, bp: &BivariatePolynomial<FieldElement<F>>, p: &UnivariatePolynomial<FieldElement<F>>) -> (Self::Commitment,Self::Commitment) {
         
-        // let coefficients_y: Vec<_> = 
-        
+        let coefficients_y: Vec<_> = p
+            .coefficients
+            .iter()
+            .map(|coefficient| coefficient.representative())
+            .collect();
+        let first_col_powers_main_group: Vec<_> = self.srs.powers_main_group.iter().step_by(self.srs.dimention_x).cloned().collect();
+        let q_y_commitment = msm(
+            &coefficients_y, &first_col_powers_main_group
+        ).expect("`points` is sliced by `cs`'s length");
 
+
+        
         let coefficients_x_y: Vec<_> = bp.flatten_out()
             .iter()
             .map(|coefficient| coefficient.representative())
             .collect();
-        msm(
+        let q_xy_commitment = msm(
             &coefficients_x_y,
             &self.srs.powers_main_group[..coefficients_x_y.len()],
         )
-        .expect("`points` is sliced by `cs`'s length")
+        .expect("`points` is sliced by `cs`'s length");
+        (q_xy_commitment,q_y_commitment)
     }
 
     //not compeleted , should return 2 commitment, one for q_xy another for q_y
@@ -182,9 +236,9 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         y: &FieldElement<F>,
         evaluation: &FieldElement<F>,
         p: &BivariatePolynomial<FieldElement<F>>,
-    ) -> Self::Commitment {
+    ) -> (Self::Commitment,Self::Commitment) {
         // let mut poly_to_commit = p - y;
-        let mut poly_to_commit = p.sub_by_field_element(evaluation);
+        let poly_to_commit = p.sub_by_field_element(evaluation);
         let (q_xy, q_y) = poly_to_commit.ruffini_division(x,y);
         // commitment to q_y , I should change the SRS to be compatible with it 
         self.commit(&q_xy,&q_y)
@@ -193,24 +247,32 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
     // should accept 2 commitment instead of 1
     fn verify(
         &self,
-        x: &FieldElement<F>,
-        y: &FieldElement<F>,
-        evaluation: &FieldElement<F>,
+        x: &FieldElement<F>, // x random point 
+        y: &FieldElement<F>, // y random point 
+        evaluation: &FieldElement<F>, // F(x,y) = evaluation
         p_commitment: &Self::Commitment,
-        proof: &Self::Commitment,
+        proofs: &(&Self::Commitment,&Self::Commitment),
     ) -> bool {
+
         let g1 = &self.srs.powers_main_group[0];
         let g2 = &self.srs.powers_secondary_group[0];
-        let alpha_g2 = &self.srs.powers_secondary_group[1];
+        let tau_g2 = &self.srs.powers_secondary_group[1];
+        let tetha_g2 = &self.srs.powers_secondary_group[2];
+
+
 
         let e = P::compute_batch(&[
             (
-                &p_commitment.operate_with(&(g1.operate_with_self(y.representative())).neg()),
+                &p_commitment.operate_with(&(g1.operate_with_self(evaluation.representative())).neg()),
                 g2,
             ),
             (
-                &proof.neg(),
-                &(alpha_g2.operate_with(&(g2.operate_with_self(x.representative())).neg())),
+                &proofs.0.neg(),
+                &(tau_g2.operate_with(&(g2.operate_with_self(x.representative())).neg())),
+            ),  
+            (
+                &proofs.1.neg(),
+                &(tetha_g2.operate_with(&(g2.operate_with_self(y.representative())).neg())),
             ),
         ]);
         e == Ok(FieldElement::one())

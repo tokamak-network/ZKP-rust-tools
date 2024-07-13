@@ -5,10 +5,12 @@ use crate::bipolynomial::BivariatePolynomial;
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 
 
+
 pub trait IsCommitmentScheme<F: IsField> {
     type Commitment;
 
-    fn commit(&self, bp: &BivariatePolynomial<FieldElement<F>>,p: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
+
+    fn commit(&self, bp: &BivariatePolynomial<FieldElement<F>>,p: &UnivariatePolynomial<FieldElement<F>>) -> (Self::Commitment,Self::Commitment);
 
 
 
@@ -18,7 +20,7 @@ pub trait IsCommitmentScheme<F: IsField> {
         y: &FieldElement<F>,
         evaluation: &FieldElement<F>,
         p: &BivariatePolynomial<FieldElement<F>>,
-    ) -> Self::Commitment;
+    ) -> (Self::Commitment,Self::Commitment);
     // fn open_batch(
     //     &self,
     //     x: &FieldElement<F>,
@@ -33,7 +35,7 @@ pub trait IsCommitmentScheme<F: IsField> {
         y: &FieldElement<F>,
         evaluation: &FieldElement<F>,
         p_commitment: &Self::Commitment,
-        proof: &Self::Commitment,
+        proofs: &(&Self::Commitment,&Self::Commitment),
     ) -> bool;
 
     // fn verify_batch(
