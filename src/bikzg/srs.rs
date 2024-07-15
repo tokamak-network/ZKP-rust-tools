@@ -283,7 +283,7 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
 
 // always first row and second column -> (m,n)
 /// Generate SRS for a tau and tetha 
-pub fn generate_srs(dims: (usize,usize), taus: (FrElement,FrElement)) -> Vec<Vec<G1Point>> {
+pub fn g1_points_srs(dims: (usize,usize), taus: (FrElement,FrElement)) -> Vec<Vec<G1Point>> {
     // Generate powers of tau: tau^1, tau^2, ..., tau^n
     let powers_of_tau_theta = vandemonde_challenge(&taus.0, &taus.1, dims.0, dims.1);
 
@@ -330,8 +330,93 @@ fn vandemonde_challenge(tau: &FrElement,theta: &FrElement , row_len: usize,col_l
 
 #[cfg(test)]
 mod tests {
+    // use alloc::vec::Vec;
+    use lambdaworks_math::{
+        cyclic_group::IsGroup,
+        elliptic_curve::{
+            short_weierstrass::{
+                curves::bls12_381::{
+                    curve::BLS12381Curve,
+                    default_types::{FrElement, FrField},
+                    pairing::BLS12381AtePairing,
+                    twist::BLS12381TwistCurve,
+                },
+                point::ShortWeierstrassProjectivePoint,
+            },
+            traits::{IsEllipticCurve, IsPairing},
+        },
+        field::element::FieldElement,
+        polynomial::Polynomial,
+        traits::{AsBytes, Deserializable},
+        unsigned_integer::element::U256,
+    };
+
+    use crate::bikzg::traits::IsCommitmentScheme;
+
+    // use super::{KateZaveruchaGoldberg, StructuredReferenceString};
+    use rand::Rng;
+
+    type G1 = ShortWeierstrassProjectivePoint<BLS12381Curve>;
 
     use super::*;
+
+    #[allow(clippy::upper_case_acronyms)]
+    type KZG = BivariateKateZaveruchaGoldberg<FrField, BLS12381AtePairing>;
+
+
+    fn create_srs() -> StructuredReferenceString<
+        <BLS12381AtePairing as IsPairing>::G1Point,
+        <BLS12381AtePairing as IsPairing>::G2Point,
+    > {
+        let mut rng = rand::thread_rng();
+        let tau_toxic_waste = FrElement::new(U256 {
+            limbs: [
+                rng.gen::<u64>(),
+                rng.gen::<u64>(),
+                rng.gen::<u64>(),
+                rng.gen::<u64>(),
+            ],
+        });
+
+        let tetha_toxic_waste = FrElement::new(U256 {
+            limbs: [
+                rng.gen::<u64>(),
+                rng.gen::<u64>(),
+                rng.gen::<u64>(),
+                rng.gen::<u64>(),
+            ],
+        });
+
+        let g1_points_2d_vec = g1_points_srs((10,10), (tau_toxic_waste.clone(),tetha_toxic_waste.clone()));
+        
+        let powers_main_group: Vec<_> = g1_points_2d_vec.into_iter().flatten().collect();
+
+        let g1 = BLS12381Curve::generator();
+        let g2 = BLS12381TwistCurve::generator();
+
+        let powers_secondary_group = [
+            g2.clone(),
+            g2.operate_with_self(tau_toxic_waste.representative()),
+            g2.operate_with_self(tetha_toxic_waste.representative()),
+
+        ];
+        StructuredReferenceString::new(10,10,&powers_main_group, &powers_secondary_group)
+    }
+
+    #[test]
+    fn kzg_1() {
+        let kzg = KZG::new(create_srs());
+        let p = Polynomial::<FrElement>::new(&[FieldElement::one(), FieldElement::one()]);
+        // let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = kzg.commit(&p);
+        // let x = -FieldElement::one();
+        // let y = p.evaluate(&x);
+        // let proof = kzg.open(&x, &y, &p);
+        // assert_eq!(y, FieldElement::zero());
+        // assert_eq!(proof, BLS12381Curve::generator());
+        // assert!(kzg.verify(&x, &y, &p_commitment, &proof));
+    }
+
+
 
     #[test]
     fn test_vandemonde_challenge() {

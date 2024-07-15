@@ -144,17 +144,21 @@ pub fn in_place_nr_2radix_fft_g(input: &mut [G1Point], twiddles: &[FrElement]) {
 //     Ok(results)
 // }
 
+// pub fn flatten_out<T>(nested_vec: Vec<Vec<T>>) -> Vec<T> {
+//     nested_vec.into_iter().flatten().collect()
+// }
+
 #[cfg(test)]
 mod tests {
     // use lambdaworks_math::{fft::polynomial::FFTPoly, msm::naive::msm, polynomial::Polynomial};
 
-    use crate::srs::generate_srs;
+    use crate::srs::g1_points_srs;
 
     use super::*;
 
     #[test]
     fn test_to_lagrange_basis() {
-        let srs = generate_srs((2,3), (FrElement::from(2),FrElement::from(3)));
+        let srs = g1_points_srs((2,3), (FrElement::from(2),FrElement::from(3)));
 
         let coefficients = vec![
             FrElement::from(6),

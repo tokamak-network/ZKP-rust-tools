@@ -1,5 +1,5 @@
 use bikzg::{
-    srs::generate_srs,
+    srs::g1_points_srs,
     utils::{random_fr},
 };
 
@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 "2" => {
                     println!("\n\n------------ Setup ------------");
-                    let srs = time_it!("SRS Generation", { generate_srs((m,2 * n), (random_fr(),random_fr())) });
+                    let srs = time_it!("SRS Generation", { g1_points_srs((m,2 * n), (random_fr(),random_fr())) });
 
                     // let lagrange_srs =
                     //     time_it!("Lagrange SRS Generation", { to_lagrange_basis(&srs)? });
