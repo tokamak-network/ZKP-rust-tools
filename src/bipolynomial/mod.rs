@@ -171,7 +171,7 @@ mod tests {
     // test ruffini implementation 
     // Q = (x-1)[3 + x + 2xy + x^2*y + 4xy^2] + (y-2)[ y^2 + 3 ]
     // Q.ruffinit(1,2) => [3+x+2xy+x^2y+4xy^2] , [y^2+3]
-    // bear in mind we test it in Z_23
+    // bear in mind we test it in Z_23 => -9 => 14 
     #[test]
     fn ruffini_test(){
         let p = BivariatePolynomial::new(&[

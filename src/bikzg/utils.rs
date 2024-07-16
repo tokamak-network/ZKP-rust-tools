@@ -44,6 +44,7 @@ pub fn random_field_elements(n: usize) -> Vec<FrElement> {
     result
 }
 
+
 /// Generate a polynomial of degree `degree` with random coefficients
 /// in the field FrElement
 pub fn random_poly(degree: usize) -> Polynomial<FrElement> {

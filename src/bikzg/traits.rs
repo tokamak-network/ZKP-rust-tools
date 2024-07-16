@@ -10,24 +10,18 @@ pub trait IsCommitmentScheme<F: IsField> {
     type Commitment;
 
 
-    fn commit(&self, bp: &BivariatePolynomial<FieldElement<F>>,p: &UnivariatePolynomial<FieldElement<F>>) -> (Self::Commitment,Self::Commitment);
-
+    fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
+    fn commit_univariate(&self, bp: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
 
 
     fn open(
         &self,
         x: &FieldElement<F>,
         y: &FieldElement<F>,
-        evaluation: &FieldElement<F>,
+        evaluation: &FieldElement<F>,//f(x,y)
         p: &BivariatePolynomial<FieldElement<F>>,
     ) -> (Self::Commitment,Self::Commitment);
-    // fn open_batch(
-    //     &self,
-    //     x: &FieldElement<F>,
-    //     y: &[FieldElement<F>],
-    //     p: &[Polynomial<FieldElement<F>>],
-    //     upsilon: &FieldElement<F>,
-    // ) -> Self::Commitment;
+
 
     fn verify(
         &self,
@@ -35,15 +29,7 @@ pub trait IsCommitmentScheme<F: IsField> {
         y: &FieldElement<F>,
         evaluation: &FieldElement<F>,
         p_commitment: &Self::Commitment,
-        proofs: &(&Self::Commitment,&Self::Commitment),
+        proofs: &(Self::Commitment,Self::Commitment),
     ) -> bool;
 
-    // fn verify_batch(
-    //     &self,
-    //     x: &FieldElement<F>,
-    //     ys: &[FieldElement<F>],
-    //     p_commitments: &[Self::Commitment],
-    //     proof: &Self::Commitment,
-    //     upsilon: &FieldElement<F>,
-    // ) -> bool;
 }
