@@ -122,6 +122,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
     
 
 }
+ 
 
 
 // /* Substraction field element at right */

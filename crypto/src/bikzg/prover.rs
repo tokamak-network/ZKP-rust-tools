@@ -10,7 +10,7 @@ use lambdaworks_math::{
 
 use rayon::prelude::*;
 
-use crate::G1Point;
+use crate::bikzg::G1Point;
 
 #[derive(Debug)]
 pub enum ProverError {

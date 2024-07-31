@@ -427,6 +427,8 @@ mod tests {
         let bp = BivariatePolynomial::new(&[
             &[FrElement::from(1), FrElement::from(1)],// (1*x^0 + 1 
             &[FrElement::from(1), FrElement::from(1)],
+            // &[FrElement::from(10), FrElement::from(5)], // y^2(10*x^0 + 5*x^1)
+
         ]);
         // let (qxy, qy) = bp.ruffini_division(&-FieldElement::<FrField>::one(),& -FieldElement::<FrField>::one());
         let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.commit_bivariate(&bp);
