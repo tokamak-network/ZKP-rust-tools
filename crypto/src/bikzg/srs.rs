@@ -21,8 +21,8 @@ use crate::bikzg::traits::IsCommitmentScheme;
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 
 use rayon::prelude::*;
-
-use crate::{bipolynomial::BivariatePolynomial, G1Point};
+use crate::bikzg::G1Point;
+use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructuredReferenceString<G1Point, G2Point> {

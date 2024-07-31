@@ -18,7 +18,7 @@ use lambdaworks_math::{
 use rand::Rng;
 use rayon::prelude::*;
 
-use crate::G1Point;
+use crate::bikzg::G1Point;
 
 /// Generate a random field element
 pub fn random_fr() -> FrElement {
@@ -153,7 +153,7 @@ pub fn in_place_nr_2radix_fft_g(input: &mut [G1Point], twiddles: &[FrElement]) {
 mod tests {
     // use lambdaworks_math::{fft::polynomial::FFTPoly, msm::naive::msm, polynomial::Polynomial};
 
-    use crate::srs::g1_points_srs;
+    use crate::bikzg::srs::g1_points_srs;
 
     use super::*;
 

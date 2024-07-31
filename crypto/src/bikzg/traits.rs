@@ -1,7 +1,7 @@
 use lambdaworks_math::field::element::FieldElement;
 use lambdaworks_math::field::traits::IsField;
 
-use crate::bipolynomial::BivariatePolynomial;
+use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 
 

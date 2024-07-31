@@ -1,5 +1,11 @@
-use std::ops::Add;
+use core::ops::Add;
 use core::ops;
+
+use crate::alloc::borrow::ToOwned;
+
+
+
+
 
 use lambdaworks_math::field::element::FieldElement; 
 use lambdaworks_math::field::traits::{IsField,IsSubFieldOf};
@@ -12,7 +18,7 @@ use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 /// as a vector of coefficients `[c_0, c_1, ... , c_n]`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BivariatePolynomial<FE> {
-    pub coefficients: Vec<Vec<FE>>,
+    pub coefficients: alloc::vec::Vec<alloc::vec::Vec<FE>>,
     pub x_degree: usize,
     pub y_degree: usize, 
 }
@@ -36,7 +42,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
         }
     }
 
-    pub fn flatten_out(&self) -> Vec<FieldElement<F>> {
+    pub fn flatten_out(&self) -> alloc::vec::Vec<FieldElement<F>> {
         self.coefficients.iter().flat_map(|row| row.clone()).collect()
     }
 
@@ -90,7 +96,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
                     .fold((BivariatePolynomial::zero(), UnivariatePolynomial::zero()), |mut poly_acc_tuple, y_row| {
                         if let Some(c) = y_row.last() {
                             let mut c = c.clone().to_extension();
-                            let mut coefficients: Vec<FieldElement<L>> = Vec::with_capacity(self.x_degree);
+                            let mut coefficients: alloc::vec::Vec<FieldElement<L>> = alloc::vec::Vec::with_capacity(self.x_degree);
                             for coeff in y_row.iter().rev().skip(1) {
                                 coefficients.push(c.clone());
                                 c = coeff + c * a;
