@@ -42,6 +42,14 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
         }
     }
 
+    pub fn from_vec(coeffs: alloc::vec::Vec<alloc::vec::Vec<FieldElement<F>>>) -> Self {
+        BivariatePolynomial {
+            y_degree: coeffs.len(),
+            x_degree: coeffs[0].len(),
+            coefficients: coeffs, 
+        }
+    }
+
     pub fn flatten_out(&self) -> alloc::vec::Vec<FieldElement<F>> {
         self.coefficients.iter().flat_map(|row| row.clone()).collect()
     }

@@ -10,3 +10,6 @@ extern crate alloc;
 // pub mod fft;
 #[cfg(feature = "alloc")]
 pub mod bipolynomial;
+
+#[cfg(feature = "alloc")]
+pub mod bifft;
