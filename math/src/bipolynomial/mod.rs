@@ -5,12 +5,13 @@ use crate::alloc::borrow::ToOwned;
 
 
 
-
-
 use lambdaworks_math::field::element::FieldElement; 
 use lambdaworks_math::field::traits::{IsField,IsSubFieldOf};
 
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
+
+
+
 
 /// Represents the polynomial (c_00 + c_01 * X + c_02 * X^2 + ... + c_0n * X^n) * Y^0 + 
 ///                           (c_10 + c_11 * X + c_12 * X^2 + ... + c_1n * X^n) * Y^1 + ... + 
@@ -92,7 +93,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
                 })
     }
 
-
+    // P(x,y) = (x-a) Q(x,y) + (y-b)Z(y)
     /// Computes quotients with `x - a` and then `y - b`  in place.
     pub fn ruffini_division<L>(&self, a: &FieldElement<L>, b: &FieldElement<L>) -> (BivariatePolynomial<FieldElement<L>>, UnivariatePolynomial<FieldElement<L>>)
     where

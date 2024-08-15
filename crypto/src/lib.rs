@@ -3,7 +3,10 @@
 #[macro_use]
 extern crate alloc;
 
+// #[cfg(feature = "alloc")]
 pub mod bikzg;
+// #[cfg(feature = "alloc")]
+pub mod lagrange_basis;
 // #[cfg(feature = "std")]
 // pub mod errors;
 // pub mod fiat_shamir;
