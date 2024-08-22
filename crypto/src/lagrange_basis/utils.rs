@@ -57,7 +57,7 @@ pub fn in_place_nr_2radix_fft_g(input: &mut [G1Point], twiddles: &[FrElement]) {
 
 
 // m*n = > m or n 2^n => 
-/// Inverse Fast Fourier transformation for elliptic curve BLS12-381 G1 points using the domain(twiddle factors)
+// Inverse Fast Fourier transformation for elliptic curve BLS12-381 G1 points using the domain(twiddle factors)
 pub fn to_lagrange_basis(points: Vec<Vec<G1Point>>) -> Result<Vec<Vec<G1Point>>, FFTError> {
  
     let mut points = points.clone();

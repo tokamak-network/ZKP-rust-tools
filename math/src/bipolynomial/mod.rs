@@ -1,4 +1,4 @@
-use core::ops::Add;
+use core::ops::{Add,Sub};
 use core::ops;
 
 use crate::alloc::borrow::ToOwned;
@@ -141,7 +141,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
 
 
 // /* Substraction field element at right */
-// impl<F, L> ops::Sub<&BivariatePolynomial<FieldElement<L>>> for &FieldElement<F>
+// impl<F, L> ops::std::Sub<&BivariatePolynomial<FieldElement<L>>> for &FieldElement<F>
 // where
 //     L: IsField,
 //     F: IsSubFieldOf<L>,
@@ -152,6 +152,192 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
 //         BivariatePolynomial::new_monomial(self.clone(), 0) - other
 //     }
 // }
+
+
+
+
+
+
+
+//Owned FieldElement minus Borrowed BivariatePolynomial
+impl<F, L> ops::Sub<&BivariatePolynomial<FieldElement<L>>> for FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn sub(self, poly: &BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Create a new vector for the result coefficients
+        let mut new_coefficients = poly.coefficients.clone();
+
+        // Subtract the scalar from the constant term of the polynomial
+        if !new_coefficients.is_empty() && !new_coefficients[0].is_empty() {
+            new_coefficients[0][0] = self.to_extension() - poly.coefficients[0][0].clone();
+        } else {
+            new_coefficients.push(vec![self.to_extension()]);
+        }
+
+        BivariatePolynomial {
+            coefficients: new_coefficients,
+            x_degree: poly.x_degree,
+            y_degree: poly.y_degree,
+        }
+    }
+}
+
+
+
+
+
+// Owned FieldElement minus Owned BivariatePolynomial
+impl<F, L> ops::Sub<BivariatePolynomial<FieldElement<L>>> for FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn sub(self, mut poly: BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Subtract the scalar from the constant term of the polynomial
+        if !poly.coefficients.is_empty() && !poly.coefficients[0].is_empty() {
+            poly.coefficients[0][0] = self.to_extension() - poly.coefficients[0][0].clone();
+        } else {
+            poly.coefficients.push(vec![self.to_extension()]);
+        }
+
+        poly
+    }
+}
+
+
+
+
+
+
+//Borrowed FieldElement minus Owned BivariatePolynomial
+impl<F, L> ops::Sub<BivariatePolynomial<FieldElement<L>>> for &FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn sub(self, mut poly: BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Subtract the scalar from the constant term of the polynomial
+        if !poly.coefficients.is_empty() && !poly.coefficients[0].is_empty() {
+            poly.coefficients[0][0] = self.clone().to_extension() - poly.coefficients[0][0].clone();
+        } else {
+            poly.coefficients.push(vec![self.clone().to_extension()]);
+        }
+
+        poly
+    }
+}
+
+
+// Borrowed FieldElement plus Borrowed BivariatePolynomial
+impl<F, L> Add<&BivariatePolynomial<FieldElement<L>>> for &FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn add(self, other: &BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        let mut new_coefficients = other.coefficients.clone();
+
+        // Add the FieldElement to the constant term
+        if !new_coefficients.is_empty() && !new_coefficients[0].is_empty() {
+            new_coefficients[0][0] = new_coefficients[0][0].clone() + self.clone().to_extension();
+        } else {
+            // If the polynomial has no constant term, we effectively add the FieldElement as the constant term
+            new_coefficients = vec![vec![self.clone().to_extension()]];
+        }
+
+        BivariatePolynomial {
+            coefficients: new_coefficients,
+            x_degree: other.x_degree,
+            y_degree: other.y_degree,
+        }
+    }
+}
+
+// Owned FieldElement plus Borrowed BivariatePolynomial
+impl<F, L> Add<&BivariatePolynomial<FieldElement<L>>> for FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn add(self, poly: &BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Create a new vector for the result coefficients
+        let mut new_coefficients = poly.coefficients.clone();
+
+        // Add the scalar to the constant term of the polynomial
+        if !new_coefficients.is_empty() && !new_coefficients[0].is_empty() {
+            new_coefficients[0][0] = new_coefficients[0][0].clone() + self.to_extension();
+        } else {
+            new_coefficients.push(vec![self.to_extension()]);
+        }
+
+        BivariatePolynomial {
+            coefficients: new_coefficients,
+            x_degree: poly.x_degree,
+            y_degree: poly.y_degree,
+        }
+    }
+}
+
+// Owned FieldElement plus Owned BivariatePolynomial
+impl<F, L> Add<BivariatePolynomial<FieldElement<L>>> for FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn add(self, mut poly: BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Add the scalar to the constant term of the polynomial
+        if !poly.coefficients.is_empty() && !poly.coefficients[0].is_empty() {
+            poly.coefficients[0][0] = poly.coefficients[0][0].clone() + self.to_extension();
+        } else {
+            poly.coefficients.push(vec![self.to_extension()]);
+        }
+
+        poly
+    }
+}
+
+// Borrowed FieldElement plus Owned BivariatePolynomial
+impl<F, L> Add<BivariatePolynomial<FieldElement<L>>> for &FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn add(self, mut poly: BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Add the scalar to the constant term of the polynomial
+        if !poly.coefficients.is_empty() && !poly.coefficients[0].is_empty() {
+            poly.coefficients[0][0] = poly.coefficients[0][0].clone() + self.clone().to_extension();
+        } else {
+            poly.coefficients.push(vec![self.clone().to_extension()]);
+        }
+
+        poly
+    }
+}
+
+
+
+
+
+
+
+
+
 
 
 

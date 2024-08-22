@@ -138,3 +138,14 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
     }
 
 }
+
+
+// pub fn compose_fft<F,E>(
+//     poly_1: BivariatePolynomial<FieldElement<E>>,
+//     poly_2: BivariatePolynomial<FieldElement<E>>,  
+// ) -> BivariatePolynomial<FieldElement<E>> 
+// where 
+//     F: IsFFTField + IsSubFieldOf<E>,
+// {
+
+// }
