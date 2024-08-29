@@ -24,9 +24,9 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
     /// If `domain_x_size` or `domain_y_size` is `None`, it defaults to 0.
     pub fn evaluate_fft<F: IsFFTField + IsSubFieldOf<E>>(
         bipoly: &BivariatePolynomial<FieldElement<E>>,
-        x_blowup_factor: usize,
+        x_blowup_factor: usize, // 
         y_blowup_factor: usize,
-        domain_x_size: Option<usize>,
+        domain_x_size: Option<usize>, // 
         domain_y_size: Option<usize>,
     )  -> Result<Vec<Vec<FieldElement<E>>>, FFTError>  {
         let domain_x_size = domain_x_size.unwrap_or(0);
@@ -80,6 +80,20 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
 
         Ok((final_transposed_coeffs))
     }
+
+    // TODO :: if we import bipoly as mutable we can call scale_in_place which is more efficient that this one. // k.w^0 , .. . 
+    pub fn evaluate_offset_fft<F: IsFFTField + IsSubFieldOf<E>>(
+        bipoly: &BivariatePolynomial<FieldElement<E>>,
+        x_blowup_factor: usize,
+        y_blowup_factor: usize,
+        domain_x_size: Option<usize>,
+        domain_y_size: Option<usize>,
+        offset: &FieldElement<F>,
+    ) -> Result<Vec<Vec<FieldElement<E>>>, FFTError> {
+        let scaled = bipoly.scale(offset);
+        BivariatePolynomial::evaluate_fft::<F>(&scaled, x_blowup_factor, y_blowup_factor, domain_x_size, domain_y_size)
+    }
+
 
     pub fn interpolate_fft<F: IsFFTField + IsSubFieldOf<E>>(
         fft_evals: &[&[FieldElement<E>]],
@@ -136,16 +150,15 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
         // let dd = transposed_y_fft as &[&[FieldElement<E>]];
         Ok(BivariatePolynomial::from_vec(transposed_x_fft))
     }
-
+    // 
+    pub fn interpolate_offset_fft<F: IsFFTField + IsSubFieldOf<E>>(
+        fft_evals: &[&[FieldElement<E>]],
+        offset: &FieldElement<F>,
+    )  -> Result<Self, FFTError> {
+        let scaled = BivariatePolynomial::interpolate_fft::<F>(fft_evals)?;
+        Ok(scaled.scale(&offset.inv().unwrap()))
+    } 
 }
 
 
-// pub fn compose_fft<F,E>(
-//     poly_1: BivariatePolynomial<FieldElement<E>>,
-//     poly_2: BivariatePolynomial<FieldElement<E>>,  
-// ) -> BivariatePolynomial<FieldElement<E>> 
-// where 
-//     F: IsFFTField + IsSubFieldOf<E>,
-// {
 
-// }

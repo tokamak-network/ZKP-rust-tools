@@ -5,6 +5,7 @@ use crate::alloc::borrow::ToOwned;
 
 
 
+use alloc::sync::Arc;
 use lambdaworks_math::field::element::FieldElement; 
 use lambdaworks_math::field::traits::{IsField,IsSubFieldOf};
 
@@ -19,7 +20,7 @@ use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 /// as a vector of coefficients `[c_0, c_1, ... , c_n]`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BivariatePolynomial<FE> {
-    pub coefficients: alloc::vec::Vec<alloc::vec::Vec<FE>>,
+    pub coefficients: alloc::vec::Vec<alloc::vec::Vec<FE>>, // ndarray , 1D 
     pub x_degree: usize,
     pub y_degree: usize, 
 }
@@ -55,6 +56,47 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
         self.coefficients.iter().flat_map(|row| row.clone()).collect()
     }
 
+    pub fn scale<S: IsSubFieldOf<F>>(&self, factor: &FieldElement<S>) -> Self {
+        let scaled_coefficient: alloc::vec::Vec<alloc::vec::Vec<FieldElement<F>>> = self
+            .coefficients
+            .iter()
+            .zip(core::iter::successors(Some(FieldElement::one()), |x| {
+                Some(x * factor)
+            }))
+            .map(|(row,y_power)| {
+                row
+                    .iter()
+                    .zip(core::iter::successors(Some(FieldElement::one()), |x| {
+                        Some(x * factor)
+                    }))
+                    .map(|(coeff, power)| y_power.clone() * power * coeff)
+                    .collect()
+            })
+            .collect();
+        
+        Self{
+            coefficients: scaled_coefficient, 
+            x_degree: self.x_degree,
+            y_degree: self.y_degree,
+        }
+    }
+
+    // TODO ::  check on return type , I decided to scale the values in place
+    pub fn scale_in_place<S: IsSubFieldOf<F>>(&mut self , factor: &FieldElement<S>) { 
+        let iter = self.coefficients.iter_mut();
+        let mut x = FieldElement::one();
+        for dd in iter {
+            dd
+            .iter_mut()
+            .zip(core::iter::successors(Some(FieldElement::one()), |y| Some(y * factor)))
+            .for_each(|(coef, power)| *coef = coef.clone() * power.to_extension() * x.clone());
+
+
+            x = x * factor.clone().to_extension();
+        }
+
+    }
+
     //TODO write ops overloading for it 
     pub fn sub_by_field_element(&self, element: &FieldElement<F>) -> BivariatePolynomial<FieldElement<F>> {
         let mut new_coefficients = self.coefficients.clone();
@@ -72,7 +114,10 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
     pub fn zero() -> Self {
         Self::new(&[])
     }
-
+    
+    //O(log k) for x^k-1 and it is for only vanishing polynomial TODO.
+    
+    // check Horners method implementation.
     pub fn evaluate<E>(&self, x: &FieldElement<E>, y: &FieldElement<E>) -> FieldElement<E>
     where
         E: IsField,
