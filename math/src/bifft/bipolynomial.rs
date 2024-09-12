@@ -1,21 +1,10 @@
-
 use lambdaworks_math::fft::errors::FFTError;
-
-use lambdaworks_math::fft::polynomial::interpolate_fft_cpu;
-use lambdaworks_math::field::traits::{IsField, IsSubFieldOf};
-
-use lambdaworks_math::{
-    field::{
-        element::FieldElement,
-        traits::{IsFFTField, RootsConfig},
-    },
-
-    fft::polynomial::evaluate_fft_cpu,
-};
-use alloc::{vec, vec::Vec};
+use lambdaworks_math::fft::polynomial::{evaluate_fft_cpu, interpolate_fft_cpu};
+use lambdaworks_math::field::element::FieldElement;
+use lambdaworks_math::field::traits::{IsFFTField, IsField, IsSubFieldOf};
+use ndarray::{Array2, Axis};
 
 use crate::bipolynomial::BivariatePolynomial;
-
 
 impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
     /// Returns `N*M` evaluations of this polynomial using FFT over a domain in a subfield F of E (so the results
@@ -24,141 +13,82 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
     /// If `domain_x_size` or `domain_y_size` is `None`, it defaults to 0.
     pub fn evaluate_fft<F: IsFFTField + IsSubFieldOf<E>>(
         bipoly: &BivariatePolynomial<FieldElement<E>>,
-        x_blowup_factor: usize, // 
-        y_blowup_factor: usize,
-        domain_x_size: Option<usize>, // 
-        domain_y_size: Option<usize>,
-    )  -> Result<Vec<Vec<FieldElement<E>>>, FFTError>  {
-        let domain_x_size = domain_x_size.unwrap_or(0);
-        let domain_y_size = domain_y_size.unwrap_or(0);
-
-        let len_x = core::cmp::max(bipoly.x_degree, domain_x_size).next_power_of_two() * x_blowup_factor;
-        let len_y = core::cmp::max(bipoly.y_degree, domain_y_size).next_power_of_two() * y_blowup_factor;
-
-        // todo :: check vector of coefficients is not zero
-
-        let mut coeffs = bipoly.coefficients.clone();
-        
-        let iter = coeffs.iter_mut();
-        for val in iter {
-            val.resize(len_x, FieldElement::zero());
-            let result = evaluate_fft_cpu::<F, E>(&val);
-            match result {
-                Ok(fft_result) => (*val = fft_result),
-                Err(e) => return Err(e),
-            }
-        }
-        // Transpose coeffs vector of vector
-        let mut transposed_coeffs: Vec<Vec<FieldElement<E>>> = Vec::new();
-        for i in 0..len_x {
-            let mut row: Vec<FieldElement<E>> = Vec::new();
-            for j in 0..len_y {
-                row.push(coeffs[j][i].clone());
-            }
-            transposed_coeffs.push(row);
-        }
-
-        let iter = transposed_coeffs.iter_mut();
-        for val in iter {
-            val.resize(len_y, FieldElement::zero());
-            let result = evaluate_fft_cpu::<F, E>(&val);
-            match result {
-                Ok(fft_result) => *val = fft_result,
-                Err(e) => return Err(e),
-            }   
-        }
-
-                // Transpose coeffs vector of vector
-        let mut final_transposed_coeffs: Vec<Vec<FieldElement<E>>> = Vec::new();
-        for i in 0..len_y {
-            let mut row: Vec<FieldElement<E>> = Vec::new();
-            for j in 0..len_x {
-                row.push(transposed_coeffs[j][i].clone());
-            }
-            final_transposed_coeffs.push(row);
-        }
-
-        Ok((final_transposed_coeffs))
-    }
-
-    // TODO :: if we import bipoly as mutable we can call scale_in_place which is more efficient that this one. // k.w^0 , .. . 
-    pub fn evaluate_offset_fft<F: IsFFTField + IsSubFieldOf<E>>(
-        bipoly: &BivariatePolynomial<FieldElement<E>>,
         x_blowup_factor: usize,
         y_blowup_factor: usize,
         domain_x_size: Option<usize>,
         domain_y_size: Option<usize>,
-        offset: &FieldElement<F>,
-    ) -> Result<Vec<Vec<FieldElement<E>>>, FFTError> {
-        let scaled = bipoly.scale(offset);
-        BivariatePolynomial::evaluate_fft::<F>(&scaled, x_blowup_factor, y_blowup_factor, domain_x_size, domain_y_size)
-    }
+    ) -> Result<Array2<FieldElement<E>>, FFTError> {
+        let domain_x_size = domain_x_size.unwrap_or(0);
+        let domain_y_size = domain_y_size.unwrap_or(0);
 
+        let len_x =
+            core::cmp::max(bipoly.x_degree, domain_x_size).next_power_of_two() * x_blowup_factor;
+        let len_y =
+            core::cmp::max(bipoly.y_degree, domain_y_size).next_power_of_two() * y_blowup_factor;
+
+        // Initialize the coefficients array with zeros and copy the polynomial's coefficients
+        let mut coeffs = Array2::<FieldElement<E>>::from_elem((len_y, len_x), FieldElement::zero());
+        for (i, row) in bipoly.coefficients.axis_iter(Axis(0)).enumerate() {
+            for (j, coeff) in row.iter().enumerate() {
+                coeffs[(i, j)] = coeff.clone();
+            }
+        }
+
+        // Perform FFT row-wise
+        for mut row in coeffs.axis_iter_mut(Axis(0)) {
+            let fft_result = evaluate_fft_cpu::<F, E>(&row.to_vec())?;
+            row.assign(&ndarray::Array1::from(fft_result));
+        }
+
+        // Transpose the array to perform FFT column-wise
+        let mut transposed_coeffs = coeffs.reversed_axes();
+
+        // Perform FFT column-wise
+        for mut col in transposed_coeffs.axis_iter_mut(Axis(0)) {
+            let fft_result = evaluate_fft_cpu::<F, E>(&col.to_vec())?;
+            col.assign(&ndarray::Array1::from(fft_result));
+        }
+
+        // Transpose back to the original orientation
+        let final_coeffs = transposed_coeffs.reversed_axes();
+
+        Ok(final_coeffs)
+    }
 
     pub fn interpolate_fft<F: IsFFTField + IsSubFieldOf<E>>(
-        fft_evals: &[&[FieldElement<E>]],
+        fft_evals: &Array2<FieldElement<E>>,
     ) -> Result<Self, FFTError> {
+        let len_y = fft_evals.nrows();
+        let len_x = fft_evals.ncols();
 
-        let len_y =  fft_evals.len();
-        let len_x = fft_evals[0].len();
+        // Create an Array2 for the x inverse FFT results
+        let mut x_ifft = Array2::<FieldElement<E>>::default((len_y, len_x));
 
-        let mut x_ifft: Vec<Vec<FieldElement<E>>> = Vec::new();
-
-        let iter = fft_evals.iter();
-        for val in iter {
-            if val.len() != len_x {
-                return Err(FFTError::InputError(len_x));
-            }
-            let result_poly = interpolate_fft_cpu::<F, E>(&val);
-            match result_poly {
-                Ok(fft_result) => x_ifft.push(fft_result.coefficients),
-                Err(e) => return Err(e),
-            }
-        }
-        
-        let mut transposed_x_fft: Vec<Vec<FieldElement<E>>> = Vec::new();
-        for i in 0..len_x {
-            let mut row: Vec<FieldElement<E>> = Vec::new();
-            for j in 0..len_y {
-                row.push(x_ifft[j][i].clone());
-            }
-            transposed_x_fft.push(row);
+        // Perform IFFT for each row
+        for (i, val) in fft_evals.axis_iter(Axis(0)).enumerate() {
+            let result_poly = interpolate_fft_cpu::<F, E>(&val.to_vec())?;
+            x_ifft
+                .row_mut(i)
+                .assign(&ndarray::Array1::from(result_poly.coefficients));
         }
 
-        let mut y_ifft: Vec<Vec<FieldElement<E>>> = Vec::new();
+        // Transpose x_ifft to prepare for the y IFFT
+        let transposed_x_fft = x_ifft.reversed_axes();
 
-        let iter = transposed_x_fft.iter_mut();
-        for val in iter {
-            if val.len() != len_y {
-                return Err(FFTError::InputError(len_y));
-            }
-            let result_poly = interpolate_fft_cpu::<F, E>(&val);
-            match result_poly {
-                Ok(fft_result) => y_ifft.push(fft_result.coefficients),
-                Err(e) => return Err(e),
-            }
+        // Create an Array2 for the y inverse FFT results
+        let mut y_ifft = Array2::<FieldElement<E>>::default((len_x, len_y));
+
+        // Perform IFFT for each transposed row
+        for (i, val) in transposed_x_fft.axis_iter(Axis(0)).enumerate() {
+            let result_poly = interpolate_fft_cpu::<F, E>(&val.to_vec())?;
+            y_ifft
+                .row_mut(i)
+                .assign(&ndarray::Array1::from(result_poly.coefficients));
         }
 
-        let mut transposed_y_fft: Vec<Vec<FieldElement<E>>> = Vec::new();
-        for i in 0..len_y {
-            let mut row: Vec<FieldElement<E>> = Vec::new();
-            for j in 0..len_x {
-                row.push(y_ifft[j][i].clone());
-            }
-            transposed_y_fft.push(row);
-        }
-        // let dd = transposed_y_fft as &[&[FieldElement<E>]];
-        Ok(BivariatePolynomial::from_vec(transposed_x_fft))
+        // Transpose back to the original orientation
+        let final_coeffs = y_ifft.reversed_axes();
+
+        Ok(BivariatePolynomial::new(final_coeffs))
     }
-    // 
-    pub fn interpolate_offset_fft<F: IsFFTField + IsSubFieldOf<E>>(
-        fft_evals: &[&[FieldElement<E>]],
-        offset: &FieldElement<F>,
-    )  -> Result<Self, FFTError> {
-        let scaled = BivariatePolynomial::interpolate_fft::<F>(fft_evals)?;
-        Ok(scaled.scale(&offset.inv().unwrap()))
-    } 
 }
-
-
-

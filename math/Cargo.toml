@@ -1,3 +1,4 @@
+
 [package]
 name = "zkp-rust-tools-math"
 description = "Modular math library for tokamak zk evm"
@@ -11,8 +12,10 @@ serde = { version = "1.0", default-features = false, features = ["derive"], opti
 serde_json = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
 rayon = { version = "1.7", optional = true }
 proptest = { version = "1.1.0", optional = true }
+ndarray = { version = "0.16.1", default-features = false }
 rand = "0.8.5"
 rustyline = "12"
+num-traits = "0.2.19"
 
 [dev-dependencies]
 rand = { version = "0.8.5", default-features = false }
