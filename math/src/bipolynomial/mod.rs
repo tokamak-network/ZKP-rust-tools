@@ -1,4 +1,5 @@
 use crate::alloc::borrow::ToOwned;
+use core::array;
 use core::ops::{Add, Sub};
 use lambdaworks_math::field::element::FieldElement;
 use lambdaworks_math::field::traits::{IsField, IsSubFieldOf};
@@ -97,9 +98,10 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
             if let Some(c) = y_row.last() {
                 // Convert the coefficient to the extension field L
                 let mut c = c.clone().to_extension();
-                let mut x_coeffs: Vec<FieldElement<L>> = Vec::with_capacity(self.x_degree);
+                
+                let mut x_coeffs = alloc::vec::Vec::with_capacity(self.x_degree);
 
-                for coeff in y_row.iter().rev().skip(1) {
+                for coeff  in y_row.iter().rev().skip(1) {
                     x_coeffs.push(c.clone());
                     c = coeff.clone().to_extension() + c * a;
                 }

@@ -365,6 +365,9 @@ mod tests {
         traits::{AsBytes, Deserializable},
         unsigned_integer::element::U256,
     };
+    use ndarray::{s, Array, Array2, Axis, Ix2};
+    use ndarray::array;
+
 
     use crate::bikzg::traits::IsCommitmentScheme;
 
@@ -424,12 +427,11 @@ mod tests {
         // (x+1)(y+1) = xy + y + x + 1 
         let bikzg = KZG::new(create_srs());
         // let p = Polynomial::<FrElement>::new(&[FieldElement::one(), FieldElement::one()]);
-        let bp = BivariatePolynomial::new(&[
-            &[FrElement::from(1), FrElement::from(1)],// (1*x^0 + 1 
-            &[FrElement::from(1), FrElement::from(1)],
-            // &[FrElement::from(10), FrElement::from(5)], // y^2(10*x^0 + 5*x^1)
-
-        ]);
+        let coefficients = array![
+            [FrElement::from(1), FrElement::from(1)],
+            [FrElement::from(1), FrElement::from(1)]
+        ];
+        let bp = BivariatePolynomial::new(coefficients);
         // let (qxy, qy) = bp.ruffini_division(&-FieldElement::<FrField>::one(),& -FieldElement::<FrField>::one());
         let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.commit_bivariate(&bp);
         let x = FieldElement::zero(); 
@@ -458,12 +460,15 @@ mod tests {
     fn kzg_2() {
         let bikzg = KZG::new(create_srs());
         // let p = Polynomial::<FrElement>::new(&[FieldElement::one(), FieldElement::one()]);
-        let bp = BivariatePolynomial::new(&[
-            &[FrElement::from(2),FrElement::from(1), FrElement::from(1)],//(2+x+x2) =2 
-            &[FrElement::from(1), FrElement::from(1),FrElement::from(1)],//1
-            &[FrElement::from(5), FrElement::from(2),FrElement::from(0)],//1
-            &[FrElement::from(3), FrElement::from(0),FrElement::from(1)],//1
-        ]);
+
+        let coefficients = array![
+            [FrElement::from(2),FrElement::from(1), FrElement::from(1)],//(2+x+x2) =2 
+            [FrElement::from(1), FrElement::from(1),FrElement::from(1)],//1
+            [FrElement::from(5), FrElement::from(2),FrElement::from(0)],//1
+            [FrElement::from(3), FrElement::from(0),FrElement::from(1)],//1
+        ];
+
+        let bp = BivariatePolynomial::new(coefficients);
         // let (qxy, qy) = bp.ruffini_division(&-FieldElement::<FrField>::one(),& -FieldElement::<FrField>::one());
         let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.commit_bivariate(&bp);
         let x = -FieldElement::one();
@@ -477,7 +482,7 @@ mod tests {
         // assert_eq!(evaluation, FieldElement::zero());
         // assert_eq!(proof.0, BLS12381Curve::generator());
         // assert_eq!(proof.1, BLS12381Curve::generator());
-        assert!(bikzg.verify(&x, &y,&fake_evaluation, &p_commitment, &proof));
+        assert!(bikzg.verify(&x, &y,&evaluation, &p_commitment, &proof));
 
 
         // let x = -FieldElement::one();

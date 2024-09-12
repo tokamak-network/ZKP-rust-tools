@@ -10,6 +10,8 @@ zkp-rust-tools-math = { workspace = true, features = ["alloc"] }
 lambdaworks-math = { version = "0.7.0" }
 sha3 = { version = "0.10", default-features = false }
 sha2 = { version = "0.10", default-features = false }
+ndarray = { version = "0.16.1", default-features = false }
+
 
 # Optional
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }

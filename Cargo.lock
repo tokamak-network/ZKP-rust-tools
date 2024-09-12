@@ -1683,6 +1683,7 @@ dependencies = [
  "criterion 0.4.0",
  "iai-callgrind",
  "lambdaworks-math",
+ "ndarray",
  "rand",
  "rand_chacha",
  "rayon",
