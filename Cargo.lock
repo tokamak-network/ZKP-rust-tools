@@ -645,10 +645,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "lambdaworks-crypto"
+version = "0.10.0"
+source = "git+https://github.com/lambdaclass/lambdaworks.git#2787f65bb47d31cc6eca5597846c1b0f6da3056d"
+dependencies = [
+ "lambdaworks-math 0.10.0",
+ "sha2",
+ "sha3",
+]
+
+[[package]]
+name = "lambdaworks-groth16"
+version = "0.10.0"
+source = "git+https://github.com/lambdaclass/lambdaworks.git#2787f65bb47d31cc6eca5597846c1b0f6da3056d"
+dependencies = [
+ "lambdaworks-crypto",
+ "lambdaworks-math 0.10.0",
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lambdaworks-math"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "358e172628e713b80a530a59654154bfc45783a6ed70ea284839800cebdf8f97"
+dependencies = [
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lambdaworks-math"
+version = "0.10.0"
+source = "git+https://github.com/lambdaclass/lambdaworks.git#2787f65bb47d31cc6eca5597846c1b0f6da3056d"
 dependencies = [
  "rayon",
  "serde",
@@ -1677,12 +1710,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "zkp-rust-tools-batch-groth16"
+version = "0.1.0"
+dependencies = [
+ "lambdaworks-groth16",
+ "lambdaworks-math 0.10.0",
+ "lazy_static",
+ "ndarray",
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+ "zkp-rust-tools-math",
+]
+
+[[package]]
 name = "zkp-rust-tools-crypto"
 version = "0.1.0"
 dependencies = [
  "criterion 0.4.0",
  "iai-callgrind",
- "lambdaworks-math",
+ "lambdaworks-math 0.7.0",
  "ndarray",
  "rand",
  "rand_chacha",
@@ -1700,7 +1748,7 @@ dependencies = [
  "const-random",
  "criterion 0.5.1",
  "iai-callgrind",
- "lambdaworks-math",
+ "lambdaworks-math 0.7.0",
  "ndarray",
  "num-traits",
  "pprof",

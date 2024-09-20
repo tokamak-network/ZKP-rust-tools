@@ -1,6 +1,7 @@
 use crate::alloc::borrow::ToOwned;
 use core::array;
 use core::ops::{Add, Sub};
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::default_types::FrElement;
 use lambdaworks_math::field::element::FieldElement;
 use lambdaworks_math::field::traits::{IsField, IsSubFieldOf};
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
@@ -34,6 +35,29 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
     pub fn flatten_out(&self) -> alloc::vec::Vec<FieldElement<F>> {
         self.coefficients.iter().cloned().collect()
     }
+
+
+    // // TODO ::  check on return type , I decided to scale the values in place
+    // pub fn scale_in_place<S: IsSubFieldOf<F>>(&mut self ,x_factor: &FieldElement<S> , y_factor: &FieldElement<S>) { 
+    //     let iter = self.coefficients.iter_mut();
+    //     let mut x = FieldElement::one();
+    //     self.coefficients
+    //         .axis_iter_mut(Axis(0))
+    //         .zip(core::iter::successors(Some(FieldElement::one), |y| Some(y * y_factor.cl)))
+    //         .for_each(|(row,fdd)|{
+    //             row.iter_mut().
+    //         });
+    //     // for dd in self.coefficients.rows_mut() {
+    //     //     dd
+    //     //     .iter_mut()
+    //     //     .zip(core::iter::successors(Some(FieldElement::one()), |y| Some(y * y_factor)))
+    //     //     .for_each(|(coef, power)| *coef = coef.clone() * power.to_extension() * x.clone());
+
+
+    //     //     x = x * factor.clone().to_extension();
+    //     // }
+
+    // }
 
     //TODO write ops overloading for it
     pub fn sub_by_field_element(
@@ -131,7 +155,14 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
 
         (q_xy, q_y)
     }
-}
+
+    // TODO :: create a new function which recieve 2 univariate polynomial and multiply them together and create a bivariate polynomial 
+    pub fn compose_from_univariate(F_X: UnivariatePolynomial<FieldElement<F>>, F_Y: UnivariatePolynomial<FieldElement<F>>) -> Self {
+        todo!()
+    }
+
+
+}   
 
 impl<F: IsField> Add for BivariatePolynomial<FieldElement<F>> {
     type Output = BivariatePolynomial<FieldElement<F>>;

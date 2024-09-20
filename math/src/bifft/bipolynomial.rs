@@ -5,7 +5,7 @@ use lambdaworks_math::field::traits::{IsFFTField, IsField, IsSubFieldOf};
 use ndarray::{Array2, Axis};
 
 use crate::bipolynomial::BivariatePolynomial;
-
+// Change the naming ??? 
 impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
     /// Returns `N*M` evaluations of this polynomial using FFT over a domain in a subfield F of E (so the results
     /// are P(w^i), with w being a primitive root of unity).
@@ -55,6 +55,19 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
         Ok(final_coeffs)
     }
 
+    // // TODO :: if we import bipoly as mutable we can call scale_in_place which is more efficient that this one. // k.w^0 , .. . 
+    // pub fn evaluate_offset_fft<F: IsFFTField + IsSubFieldOf<E>>(
+    //     bipoly: &BivariatePolynomial<FieldElement<E>>,
+    //     x_blowup_factor: usize,
+    //     y_blowup_factor: usize,
+    //     domain_x_size: Option<usize>,
+    //     domain_y_size: Option<usize>,
+    //     offset: &FieldElement<F>,
+    // ) -> Result<Vec<Vec<FieldElement<E>>>, FFTError> {
+    //     let scaled = bipoly.scale(offset);
+    //     BivariatePolynomial::evaluate_fft::<F>(&scaled, x_blowup_factor, y_blowup_factor, domain_x_size, domain_y_size)
+    // }
+
     pub fn interpolate_fft<F: IsFFTField + IsSubFieldOf<E>>(
         fft_evals: &Array2<FieldElement<E>>,
     ) -> Result<Self, FFTError> {
@@ -91,4 +104,94 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
 
         Ok(BivariatePolynomial::new(final_coeffs))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lambdaworks_math::field::element::FieldElement;
+    use lambdaworks_math::field::{
+        test_fields::u64_test_field::{U64TestField, U64TestFieldExtension},
+        traits::RootsConfig,
+    };
+    use ndarray::{array, Array, Array1};
+
+    use lambdaworks_math::fft::cpu::roots_of_unity::{get_powers_of_primitive_root, get_powers_of_primitive_root_coset};
+
+    fn gen_fft_and_naive_evaluation<F: IsFFTField>(
+        poly: BivariatePolynomial<FieldElement<F>>,
+    ) -> (Array2<FieldElement<F>>, Array2<FieldElement<F>>) {
+        let len_x = poly.x_degree.next_power_of_two();
+        let order_x = len_x.trailing_zeros();
+
+        let len_y = poly.y_degree.next_power_of_two();
+        let order_y = len_y.trailing_zeros();
+
+        let twiddles_x =
+            get_powers_of_primitive_root(order_x.into(), len_x, RootsConfig::Natural).unwrap();
+        let twiddles_y= 
+            get_powers_of_primitive_root(order_y.into(), len_y, RootsConfig::Natural).unwrap();
+        
+        // let twiddles_y_array = Array1::from_ve
+        // Array2::mapv(&self, f)
+        // [(x_0, y_0) , (x_1,y_0)] ... mapv
+        let fft_eval = BivariatePolynomial::evaluate_fft::<F>(&poly, 1,1,None, None).unwrap();
+        // let naive_eval = poly.evaluate_slice(&twiddles);
+
+
+
+
+        let naive_eval_vec = twiddles_y
+            .iter()
+            .map(|y_val| {
+                twiddles_x.iter().map(|x_val| poly.evaluate(x_val, y_val)).collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        let naive_eval: ndarray::ArrayBase<ndarray::OwnedRepr<FieldElement<F>>, ndarray::Dim<[usize; 2]>> = Array2::from_shape_vec((twiddles_y.len(), twiddles_x.len()), naive_eval_vec.into_iter().flatten().collect()).unwrap();
+
+        (fft_eval, naive_eval)
+    }
+
+
+    mod u64_field_tests {
+        use super::*;
+        use lambdaworks_math::{field::test_fields::u64_test_field::U64TestField, msm::naive};
+
+        // FFT related tests
+        type F = U64TestField;
+        type FE = FieldElement<F>;
+
+        // 3 + x + 2x*y + x^2*y + 4x*y^2
+        // because we lexicography order is based on y and x the vector should represent like this
+        // ( 3 + 1 + 0 ) , ( 0 , 2 , 1) , (0 , 4 , 0)
+        fn polynomial_a() -> BivariatePolynomial<FE> {
+            BivariatePolynomial::new(array![
+                [FE::new(3), FE::new(1), FE::new(0)],
+                [FE::new(0), FE::new(2), FE::new(1)],
+                [FE::new(0), FE::new(4), FE::new(0)],
+            ])
+        }
+
+        #[test]
+        fn test_evaluation_fft_with_naive_evaluation(){
+            let a_poly: BivariatePolynomial<FieldElement<lambdaworks_math::field::test_fields::u64_test_field::U64Field<18446744069414584321>>> = polynomial_a();
+            // let evals = BivariatePolynomial::evaluate_fft::<F>(&a_poly, 1, 1, None, None);
+            let (fft_eval, naive_eval) = gen_fft_and_naive_evaluation(a_poly);
+            let mut naive_copy = naive_eval.clone();
+            // naive_copy[[0, 0]] = FE::one();
+            assert_eq!(fft_eval, naive_copy);
+
+            
+
+
+        }
+    
+
+    }
+
+
+
+
+
 }
