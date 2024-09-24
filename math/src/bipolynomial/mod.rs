@@ -36,28 +36,35 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
         self.coefficients.iter().cloned().collect()
     }
 
+    // TODO :: check for more efficiency 
+    pub fn scale<S: IsSubFieldOf<F>>(&self, x_factor: &FieldElement<S>,y_factor :&FieldElement<S>) -> Self {
+        let scaled_coefficient = self
+            .coefficients
+            .axis_iter(Axis(0))
+            .zip(core::iter::successors(Some(FieldElement::one()), |y| {
+                Some(y * y_factor)
+            }))
+            .map(|(row, y_power)| {
+                row.iter()
+                    .zip(core::iter::successors(Some(FieldElement::one()), |x| {
+                        Some(x * x_factor)
+                    }))
+                    .map(|(coeff, x_power)| y_power.clone() * x_power * coeff)
+                    .collect::<Vec<_>>() // Collect each row into a Vec
+            })
+            .collect::<Vec<_>>(); // Collect all rows into a Vec of Vecs
 
-    // // TODO ::  check on return type , I decided to scale the values in place
-    // pub fn scale_in_place<S: IsSubFieldOf<F>>(&mut self ,x_factor: &FieldElement<S> , y_factor: &FieldElement<S>) { 
-    //     let iter = self.coefficients.iter_mut();
-    //     let mut x = FieldElement::one();
-    //     self.coefficients
-    //         .axis_iter_mut(Axis(0))
-    //         .zip(core::iter::successors(Some(FieldElement::one), |y| Some(y * y_factor.cl)))
-    //         .for_each(|(row,fdd)|{
-    //             row.iter_mut().
-    //         });
-    //     // for dd in self.coefficients.rows_mut() {
-    //     //     dd
-    //     //     .iter_mut()
-    //     //     .zip(core::iter::successors(Some(FieldElement::one()), |y| Some(y * y_factor)))
-    //     //     .for_each(|(coef, power)| *coef = coef.clone() * power.to_extension() * x.clone());
-
-
-    //     //     x = x * factor.clone().to_extension();
-    //     // }
-
-    // }
+        let scaled_coefficient = Array2::from_shape_vec(
+            (self.coefficients.nrows(), self.coefficients.ncols()),
+            scaled_coefficient.into_iter().flatten().collect()
+        ).unwrap();
+        
+        Self{
+            coefficients: scaled_coefficient, 
+            x_degree: self.x_degree,
+            y_degree: self.y_degree,
+        }
+    }
 
     //TODO write ops overloading for it
     pub fn sub_by_field_element(
@@ -558,6 +565,19 @@ mod tests {
             [FE::new(3), FE::new(4), FE::new(0)],
             [FE::new(0), FE::new(0), FE::new(0)],
         ])
+    }
+
+    #[test]
+    fn test_scale_polynomial(){
+        let a = polynomial_a();
+        let scaled_a = a.scale(&FE::new(2), &FE::new(2));
+        let expected_a =         BivariatePolynomial::new(array![
+            [FE::new(3), FE::new(2), FE::new(0)],
+            [FE::new(0), FE::new(8), FE::new(8)],
+            [FE::new(0), FE::new(9), FE::new(0)],
+        ]);
+        assert_eq!(scaled_a, expected_a)
+        
     }
 
     #[test]

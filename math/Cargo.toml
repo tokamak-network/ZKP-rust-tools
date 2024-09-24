@@ -7,7 +7,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-lambdaworks-math = { version = "0.7.0" }
+lambdaworks-math = { git="https://github.com/lambdaclass/lambdaworks.git", version = "0.10.0" }
+lambdaworks-groth16 = {  git="https://github.com/lambdaclass/lambdaworks.git",version = "0.10.0"}
 serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
 rayon = { version = "1.7", optional = true }

@@ -55,18 +55,19 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
         Ok(final_coeffs)
     }
 
-    // // TODO :: if we import bipoly as mutable we can call scale_in_place which is more efficient that this one. // k.w^0 , .. . 
-    // pub fn evaluate_offset_fft<F: IsFFTField + IsSubFieldOf<E>>(
-    //     bipoly: &BivariatePolynomial<FieldElement<E>>,
-    //     x_blowup_factor: usize,
-    //     y_blowup_factor: usize,
-    //     domain_x_size: Option<usize>,
-    //     domain_y_size: Option<usize>,
-    //     offset: &FieldElement<F>,
-    // ) -> Result<Vec<Vec<FieldElement<E>>>, FFTError> {
-    //     let scaled = bipoly.scale(offset);
-    //     BivariatePolynomial::evaluate_fft::<F>(&scaled, x_blowup_factor, y_blowup_factor, domain_x_size, domain_y_size)
-    // }
+    // TODO :: if we import bipoly as mutable we can call scale_in_place which is more efficient that this one. // k.w^0 , .. . 
+    pub fn evaluate_offset_fft<F: IsFFTField + IsSubFieldOf<E>>(
+        bipoly: &BivariatePolynomial<FieldElement<E>>,
+        x_blowup_factor: usize,
+        y_blowup_factor: usize,
+        domain_x_size: Option<usize>,
+        domain_y_size: Option<usize>,
+        offset_x: &FieldElement<F>,
+        offset_y: &FieldElement<F>,
+    ) -> Result<Array2<FieldElement<E>>, FFTError> {
+        let scaled = bipoly.scale(offset_x,offset_y);
+        BivariatePolynomial::evaluate_fft::<F>(&scaled, x_blowup_factor, y_blowup_factor, domain_x_size, domain_y_size)
+    }
 
     pub fn interpolate_fft<F: IsFFTField + IsSubFieldOf<E>>(
         fft_evals: &Array2<FieldElement<E>>,
@@ -79,7 +80,10 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
 
         // Perform IFFT for each row
         for (i, val) in fft_evals.axis_iter(Axis(0)).enumerate() {
-            let result_poly = interpolate_fft_cpu::<F, E>(&val.to_vec())?;
+            let dd = &val.to_vec();
+            // have to change this with customized version of interpolate_fft_cpu 
+            let mut result_poly = interpolate_fft_cpu::<F, E>(dd)?;
+            result_poly.coefficients.resize(len_x, FieldElement::zero());
             x_ifft
                 .row_mut(i)
                 .assign(&ndarray::Array1::from(result_poly.coefficients));
@@ -93,7 +97,8 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
 
         // Perform IFFT for each transposed row
         for (i, val) in transposed_x_fft.axis_iter(Axis(0)).enumerate() {
-            let result_poly = interpolate_fft_cpu::<F, E>(&val.to_vec())?;
+            let mut result_poly = interpolate_fft_cpu::<F, E>(&val.to_vec())?;
+            result_poly.coefficients.resize(len_y, FieldElement::zero());
             y_ifft
                 .row_mut(i)
                 .assign(&ndarray::Array1::from(result_poly.coefficients));
@@ -104,6 +109,20 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
 
         Ok(BivariatePolynomial::new(final_coeffs))
     }
+
+    // TODO :: if we import bipoly as mutable we can call scale_in_place which is more efficient that this one. // k.w^0 , .. . 
+    pub fn interpolate_offset_fft<F: IsFFTField + IsSubFieldOf<E>>(
+        fft_evals: &Array2<FieldElement<E>>,
+        offset_x: &FieldElement<F>,
+        offset_y: &FieldElement<F>,
+    ) -> Result<Self, FFTError> {
+        let scaled = BivariatePolynomial::interpolate_fft::<F>(fft_evals)?;
+
+        Ok(scaled.scale(&offset_x.inv().unwrap(),&offset_y.inv().unwrap()))
+
+    }
+
+
 }
 
 #[cfg(test)]
@@ -173,18 +192,77 @@ mod tests {
             ])
         }
 
+            // 1 + 2x + 3y + 4xy
+        fn polynomial_b() -> BivariatePolynomial<FE> {
+            BivariatePolynomial::new(array![
+                [FE::new(1), FE::new(2), FE::new(0)],
+                [FE::new(3), FE::new(4), FE::new(0)],
+                [FE::new(0), FE::new(0), FE::new(0)],
+            ])
+        }
+
+
         #[test]
         fn test_evaluation_fft_with_naive_evaluation(){
-            let a_poly: BivariatePolynomial<FieldElement<lambdaworks_math::field::test_fields::u64_test_field::U64Field<18446744069414584321>>> = polynomial_a();
+            let a_poly = polynomial_a();
             // let evals = BivariatePolynomial::evaluate_fft::<F>(&a_poly, 1, 1, None, None);
             let (fft_eval, naive_eval) = gen_fft_and_naive_evaluation(a_poly);
             let mut naive_copy = naive_eval.clone();
             // naive_copy[[0, 0]] = FE::one();
             assert_eq!(fft_eval, naive_copy);
 
+            let a_poly_interpolate = BivariatePolynomial::interpolate_fft::<F>(&fft_eval).unwrap();
+            let poly_a_zero_pad = BivariatePolynomial::new(array![
+                [FE::new(3), FE::new(1), FE::new(0), FE::new(0)],
+                [FE::new(0), FE::new(2), FE::new(1), FE::new(0)],
+                [FE::new(0), FE::new(4), FE::new(0), FE::new(0)],
+                [FE::new(0), FE::new(0), FE::new(0), FE::new(0)]
+            ]);
+
+            assert_eq!(poly_a_zero_pad, a_poly_interpolate);
+
+        }
+
+        #[test]
+        fn test_multiply_bivariates() {
+            let a_times_b = BivariatePolynomial::new(array![
+                [FE::new(3), FE::new(7), FE::new(2), FE::new(0)],
+                [FE::new(9), FE::new(17), FE::new(9), FE::new(2)],
+                [FE::new(0), FE::new(10), FE::new(19), FE::new(4)],
+                [FE::new(0), FE::new(12), FE::new(16), FE::new(0)]
+            ]); 
             
+            let a_evals =  BivariatePolynomial::evaluate_fft::<F>(&polynomial_a(), 1, 1, Some(4), Some(4)).unwrap();
+            
+            let b_evals = BivariatePolynomial::evaluate_fft::<F>(&polynomial_b(), 1, 1,  Some(4), Some(4)).unwrap();
 
+            let mul_eval = a_evals * b_evals ;
 
+            let mul_poly = BivariatePolynomial::interpolate_fft::<F>(&mul_eval).unwrap();
+            
+            assert_eq!(mul_poly, a_times_b);
+
+            let a_times_b_zero_pad = BivariatePolynomial::new(array![
+                [FE::new(3), FE::new(7), FE::new(2), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
+                [FE::new(9), FE::new(17), FE::new(9), FE::new(2), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
+                [FE::new(0), FE::new(10), FE::new(19), FE::new(4), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
+                [FE::new(0), FE::new(12), FE::new(16), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
+                [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
+                [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
+                [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
+                [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)]
+            ]); 
+            let a_evals_zero_pad =  BivariatePolynomial::evaluate_fft::<F>(&polynomial_a(), 1, 1, Some(8), Some(8)).unwrap();
+            
+            let b_evals_zero_pad = BivariatePolynomial::evaluate_fft::<F>(&polynomial_b(), 1, 1,  Some(8), Some(8)).unwrap();
+                
+            let mul_eval_zero_pad = a_evals_zero_pad * b_evals_zero_pad; 
+            
+            let mul_poly = BivariatePolynomial::interpolate_fft::<F>(&mul_eval_zero_pad).unwrap();
+            
+            assert_eq!(mul_poly, a_times_b_zero_pad);
+
+                
         }
     
 

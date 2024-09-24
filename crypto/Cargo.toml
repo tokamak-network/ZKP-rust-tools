@@ -7,7 +7,8 @@ license.workspace = true
 
 [dependencies]
 zkp-rust-tools-math = { workspace = true, features = ["alloc"] }
-lambdaworks-math = { version = "0.7.0" }
+lambdaworks-math = { git="https://github.com/lambdaclass/lambdaworks.git", version = "0.10.0" }
+lambdaworks-groth16 = {  git="https://github.com/lambdaclass/lambdaworks.git",version = "0.10.0"}
 sha3 = { version = "0.10", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 ndarray = { version = "0.16.1", default-features = false }

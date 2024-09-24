@@ -1,6 +1,6 @@
 use lambdaworks_groth16::{common::{FrElement,FrField}, r1cs::{self, ConstraintSystem, R1CS}};
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
-use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
+use lambdaworks_math::{fft::errors::FFTError, polynomial::Polynomial as UnivariatePolynomial};
 use ndarray::{s, Array, Array2, ArrayBase, Axis, IndexLonger, Ix2};
 
 // 
@@ -27,7 +27,7 @@ impl SubcircuitManager {
         }
     } 
     // will return U V, W matrices 
-    pub fn concatinate_subcircuits(&self ,ordered_idx: &[usize], witnesses: &[Vec<FrElement>]) -> (Array2<FrElement>,Array2<FrElement>,Array2<FrElement>) {
+    pub fn concatinate_subcircuits(&self ,ordered_idx: &[usize], witnesses: &[Vec<FrElement>]) -> Result<(BivariatePolynomial<FrElement>,BivariatePolynomial<FrElement>,BivariatePolynomial<FrElement>),FFTError> {
 
         let mut l_matrix = Array2::<FrElement>::default((self.max_constraints, witnesses.len()));
         let mut r_matrix = Array2::<FrElement>::default((self.max_constraints, witnesses.len()));
@@ -50,11 +50,19 @@ impl SubcircuitManager {
 
             }
         }
-
-    (l_matrix, r_matrix, o_matrix)
+        let l_poly = BivariatePolynomial::interpolate_fft::<FrField>(&l_matrix)?;
+        let r_poly = BivariatePolynomial::interpolate_fft::<FrField>(&r_matrix)?;
+        let o_poly = BivariatePolynomial::interpolate_fft::<FrField>(&o_matrix)?;
+    
+        Ok((l_poly, r_poly, o_poly))
     }
 
-    
+    pub fn generate_proof(&self, u: BivariatePolynomial<FrElement>,v: BivariatePolynomial<FrElement>,w: BivariatePolynomial<FrElement>) {
+        
+            
+
+        todo!()
+    }
 }
 
 // #[inline]
