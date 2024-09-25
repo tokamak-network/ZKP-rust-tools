@@ -31,6 +31,20 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
             y_degree,
         }
     }
+    // // TODO :: return if not possible 
+    // pub fn trim_last_row_zeros(&self) -> Self {
+    // let last_row = self.coefficients.row(self.y_degree - 1);
+    // if last_row.iter().all(|&coeff| coeff.is_zero()) {
+    //     let trimmed_coefficients = self.coefficients.slice(s![..-1, ..]);
+    //     BivariatePolynomial {
+    //         coefficients: trimmed_coefficients,
+    //         x_degree: self.x_degree,
+    //         y_degree: self.y_degree - 1,
+    //     }
+    // } else {
+    //     self.clone()
+    // }
+    // }
 
     pub fn flatten_out(&self) -> alloc::vec::Vec<FieldElement<F>> {
         self.coefficients.iter().cloned().collect()

@@ -1,6 +1,6 @@
 use lambdaworks_groth16::{common::{FrElement,FrField}, r1cs::{self, ConstraintSystem, R1CS}};
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
-use lambdaworks_math::{fft::errors::FFTError, field::element::{self, FieldElement}, polynomial::Polynomial as UnivariatePolynomial};
+use lambdaworks_math::{fft::errors::FFTError, field::element::{self, FieldElement}, helpers::next_power_of_two, polynomial::Polynomial as UnivariatePolynomial};
 use ndarray::{concatenate, s, Array, Array2, ArrayBase, Axis, IndexLonger, Ix2};
 
 // 
@@ -23,13 +23,14 @@ pub struct SubcircuitManager{
 impl SubcircuitManager {
     pub fn new(num_subcircuits: usize, max_constraints: usize, max_witness: usize, subcircuits: Vec<R1CS>) -> Self {
         let max_constraints = max_constraints.next_power_of_two();
+        let max_witness = max_witness.next_power_of_two();
         Self {
             num_subcircuits,
             max_constraints,
             max_witness,
             subcircuits,
             xi : FrElement::from(3), 
-            zeta: FrElement::from(4),
+            zeta: FrElement::from(7),
         }
     } 
     // will return U V, W matrices 
@@ -56,6 +57,14 @@ impl SubcircuitManager {
 
             }
         }
+        // let zero_matrix = (&l_matrix.clone() * &r_matrix.clone() )- &o_matrix.clone(); 
+        // #[cfg(debug_assertions)]
+        // for row in zero_matrix.axis_iter(Axis(1)) {
+        //     println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
+        // }
+        // #[cfg(debug_assertions)]
+        // println!("{:?}", "sdfsdf");
+
         let l_poly = BivariatePolynomial::interpolate_fft::<FrField>(&l_matrix)?;
         let r_poly = BivariatePolynomial::interpolate_fft::<FrField>(&r_matrix)?;
         let o_poly = BivariatePolynomial::interpolate_fft::<FrField>(&o_matrix)?;
@@ -65,13 +74,16 @@ impl SubcircuitManager {
     // TODO :: error handling , it will return \pi_X and \pi_Y
     pub fn generate_proof_polynomials(&self, u: BivariatePolynomial<FrElement>,v: BivariatePolynomial<FrElement>,w: BivariatePolynomial<FrElement>) -> (BivariatePolynomial<FrElement>, BivariatePolynomial<FrElement>){
         
+        let s = u.x_degree;
+        let d = self.max_constraints;
+
         let a_coset_y_evaluation = BivariatePolynomial::evaluate_offset_fft(&u, 1, 1, None, None, &FrElement::one() , &self.xi).unwrap();
         let b_coset_y_evaluation = BivariatePolynomial::evaluate_offset_fft(&v, 1, 1, None, None, &FrElement::one() , &self.xi).unwrap();
-        let c_coset_y_evaluation = BivariatePolynomial::evaluate_offset_fft(&v, 1, 1, None, None, &FrElement::one() , &self.xi).unwrap();
+        let c_coset_y_evaluation = BivariatePolynomial::evaluate_offset_fft(&w, 1, 1, None, None, &FrElement::one() , &self.xi).unwrap();
 
         let mut r_coset_y_evaluation = (a_coset_y_evaluation * b_coset_y_evaluation ) - c_coset_y_evaluation;
 
-        let divisor_inv_xi = (self.xi.pow(self.max_witness) - FrElement::one()).inv().unwrap(); 
+        let divisor_inv_xi = (self.xi.pow(s) - FrElement::one()).inv().unwrap(); 
 
 
         r_coset_y_evaluation.map_mut(|elem| elem.clone() * &divisor_inv_xi);
@@ -83,26 +95,43 @@ impl SubcircuitManager {
         for row in pi_y_poly.coefficients.axis_iter(Axis(0)) {
             println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
         }
+
+        #[cfg(debug_assertions)]
+        println!("{:?}", "inja ro bebing**********************\n");
+
+        // let r_coset_y_evaluation = r_coset_y_evaluation.slice(s![..-1, ..]);
+        // let pi_y_poly = BivariatePolynomial::new(pi_y_poly.coefficients.)
+        // pi_y_poly.coefficients.remove_index(Axis(0), pi_y_poly.coefficients.len_of(Axis(0)));
+        let pi_y_poly = BivariatePolynomial::new(pi_y_poly.coefficients.slice(s![..-1,..]).to_owned());
+
+        #[cfg(debug_assertions)]
+        for row in pi_y_poly.coefficients.axis_iter(Axis(0)) {
+            println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
+        }
+
+        #[cfg(debug_assertions)]
+        println!("{:?}", "    pi_y_poly       **********************\n");
+
+
         let pi_y_coefficients_negated = pi_y_poly.coefficients.mapv(|elem| -elem);
 
         // dimension of pi_y_coefficients should be d*s 
 
-        pi_y_poly.coefficients.get((1,1));
         //step 5 
-        let remainder_poly_coefficients = concatenate(Axis(1), &[pi_y_coefficients_negated.view(), pi_y_poly.coefficients.view()]).unwrap();
+        let remainder_poly_coefficients = concatenate(Axis(0), &[pi_y_coefficients_negated.view(), pi_y_poly.coefficients.view()]).unwrap();
 
         let remainder_poly = BivariatePolynomial::new(remainder_poly_coefficients);
 
         let remainder_poly_evaluation = BivariatePolynomial::evaluate_offset_fft(&remainder_poly, 1, 1, None, None, &self.zeta, &FrElement::one()).unwrap();
         
-        let d_coset_x_evaluation_x_zero_padded = BivariatePolynomial::evaluate_offset_fft(&u, 2, 1, None, None, &self.zeta, &FrElement::one()).unwrap();
-        let e_coset_x_evaluation_x_zero_padded = BivariatePolynomial::evaluate_offset_fft(&v, 2, 1, None, None, &self.zeta, &FrElement::one()).unwrap();
-        let f_coset_x_evaluation_x_zero_padded = BivariatePolynomial::evaluate_offset_fft(&w, 2, 1, None, None, &self.zeta, &FrElement::one()).unwrap();
+        let d_coset_x_evaluation_x_zero_padded = BivariatePolynomial::evaluate_offset_fft(&u, 1, 2, None, None, &self.zeta, &FrElement::one()).unwrap();
+        let e_coset_x_evaluation_x_zero_padded = BivariatePolynomial::evaluate_offset_fft(&v, 1, 2, None, None, &self.zeta, &FrElement::one()).unwrap();
+        let f_coset_x_evaluation_x_zero_padded = BivariatePolynomial::evaluate_offset_fft(&w, 1, 2, None, None, &self.zeta, &FrElement::one()).unwrap();
 
         let mut q_coset_x_evaluation = (d_coset_x_evaluation_x_zero_padded * e_coset_x_evaluation_x_zero_padded) - f_coset_x_evaluation_x_zero_padded - remainder_poly_evaluation; 
 
 
-        let divisor_inv_zeta = (self.zeta.pow(self.max_constraints) - FrElement::one()).inv().unwrap(); 
+        let divisor_inv_zeta = (self.zeta.pow(d) - FrElement::one()).inv().unwrap(); 
        
         q_coset_x_evaluation.map_mut(|elem| elem.clone() * &divisor_inv_zeta);
     
@@ -257,7 +286,7 @@ mod tests {
             ],
             7,
         );
-        static ref FOUR_FAC_WITNESS: Vec<FrElement> =  vec![FrElement::from(1),FrElement::from(1680),FrElement::from(5),FrElement::from(6),FrElement::from(7),FrElement::from(8),FrElement::from(30),FrElement::from(42)];
+        static ref FOUR_FAC_WITNESS: Vec<FrElement> =  vec![FrElement::from(1),FrElement::from(1680),FrElement::from(5),FrElement::from(6),FrElement::from(7),FrElement::from(8),FrElement::from(30),FrElement::from(56)];
 
         // x^3 + y^3 = z^3 , doesnt have solution, just for fun :) . the only possible solution is zero vector :)
         // [1, x, y, z, w_1(x^2), w_2(y^2), w_3(z^2), w_4(w_1*x), w_5(w_2*y), w_6(w_3*z)]
@@ -321,7 +350,7 @@ mod tests {
                 vec![FrElement::from(0),FrElement::from(0),FrElement::from(0),FrElement::from(0),FrElement::from(0),FrElement::from(0),FrElement::from(1)],
 
             ],
-            6,
+            5,
         );
 
         static ref CUBIC_EQUATION_WITNESS: Vec<FrElement> = vec![FrElement::from(1),FrElement::from(2),FrElement::from(4),FrElement::from(8),FrElement::from(12),FrElement::from(19)];
@@ -339,14 +368,23 @@ mod tests {
         let (u,v,w) = subcircuit_manager.concatinate_subcircuits(&[0,1,2,3], &[KEVIN_WITNESS.clone(), THREE_FAC_WITNESS.clone(),FOUR_FAC_WITNESS.clone(),CUBIC_FERMA_LAST_THEOREM_WITNESS.clone()]).unwrap();
         
         let (pi_y, pi_x) = subcircuit_manager.generate_proof_polynomials(u, v, w);
-    
+        #[cfg(debug_assertions)]
+        for row in pi_x.coefficients.axis_iter(Axis(0)) {
+            println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
+            println!("{:?}","%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+        }
+
+        #[cfg(debug_assertions)]
+        println!("{:?}","SHIIIIIT");
+        #[cfg(debug_assertions)]
+        println!("{:?}", pi_x);
         // #[cfg(debug_assertions)]
         // println!("{:?}", pi_y);
         // #[cfg(debug_assertions)]
         // println!("{:?}", pi_x);
         // // pi_x.coefficients.get((0,0))
-        #[cfg(debug_assertions)]
-        println!("{:?}", FrElement::from(1000).representative());
+        // #[cfg(debug_assertions)]
+        // println!("{:?}", FrElement::zero().representative());
  
         // #[cfg(debug_assertions)]
         // for row in pi_x.coefficients.axis_iter(Axis(1)) {
