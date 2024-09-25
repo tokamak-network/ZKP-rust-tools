@@ -50,9 +50,9 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
                         Some(x * x_factor)
                     }))
                     .map(|(coeff, x_power)| y_power.clone() * x_power * coeff)
-                    .collect::<Vec<_>>() // Collect each row into a Vec
+                    .collect::<alloc::vec::Vec<_>>() // Collect each row into a Vec
             })
-            .collect::<Vec<_>>(); // Collect all rows into a Vec of Vecs
+            .collect::<alloc::vec::Vec<_>>(); // Collect all rows into a Vec of Vecs
 
         let scaled_coefficient = Array2::from_shape_vec(
             (self.coefficients.nrows(), self.coefficients.ncols()),
@@ -577,7 +577,6 @@ mod tests {
             [FE::new(0), FE::new(9), FE::new(0)],
         ]);
         assert_eq!(scaled_a, expected_a)
-        
     }
 
     #[test]
