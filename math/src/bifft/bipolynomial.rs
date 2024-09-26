@@ -35,7 +35,7 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
         }
 
         // Perform FFT row-wise
-        for mut row in coeffs.axis_iter_mut(Axis(0)) {
+        for mut row in coeffs.axis_iter_mut(Axis(1)) {
             let fft_result = evaluate_fft_cpu::<F, E>(&row.to_vec())?;
             row.assign(&ndarray::Array1::from(fft_result));
         }
@@ -44,7 +44,7 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
         let mut transposed_coeffs = coeffs.reversed_axes();
 
         // Perform FFT column-wise
-        for mut col in transposed_coeffs.axis_iter_mut(Axis(0)) {
+        for mut col in transposed_coeffs.axis_iter_mut(Axis(1)) {
             let fft_result = evaluate_fft_cpu::<F, E>(&col.to_vec())?;
             col.assign(&ndarray::Array1::from(fft_result));
         }
@@ -250,7 +250,8 @@ mod tests {
                 [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
                 [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
                 [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
-                [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)]
+                [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],
+
             ]); 
             let a_evals_zero_pad =  BivariatePolynomial::evaluate_fft::<F>(&polynomial_a(), 1, 1, Some(8), Some(8)).unwrap();
             
@@ -261,7 +262,7 @@ mod tests {
             let mul_poly = BivariatePolynomial::interpolate_fft::<F>(&mul_eval_zero_pad).unwrap();
             
             assert_eq!(mul_poly, a_times_b_zero_pad);
-                
+
                 
         }
     
