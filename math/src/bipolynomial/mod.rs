@@ -2,10 +2,11 @@ use crate::alloc::borrow::ToOwned;
 use core::array;
 use core::ops::{Add, Sub};
 use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::default_types::FrElement;
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bn_254::pairing::X;
 use lambdaworks_math::field::element::FieldElement;
 use lambdaworks_math::field::traits::{IsField, IsSubFieldOf};
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
-use ndarray::{s, Array, Array2, Axis, Ix2};
+use ndarray::{s, Array, Array2, ArrayBase, Axis, Ix2};
 
 /// Represents the polynomial (c_00 + c_01 * X + c_02 * X^2 + ... + c_0n * X^n) * Y^0 +
 ///                           (c_10 + c_11 * X + c_12 * X^2 + ... + c_1n * X^n) * Y^1 + ... +
@@ -17,6 +18,10 @@ pub struct BivariatePolynomial<FE> {
     pub x_degree: usize,
     pub y_degree: usize,
 }
+
+
+
+
 
 impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
     /// Creates a new polynomial with the given coefficients
@@ -49,18 +54,19 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
     pub fn flatten_out(&self) -> alloc::vec::Vec<FieldElement<F>> {
         self.coefficients.iter().cloned().collect()
     }
-
+    // c00 x^0 + ... c0n x^n ] Y^0 
+    // c10 x^0 + ... c1n x^n ] Y^1
     // TODO :: check for more efficiency 
     pub fn scale<S: IsSubFieldOf<F>>(&self, x_factor: &FieldElement<S>,y_factor :&FieldElement<S>) -> Self {
         let scaled_coefficient = self
             .coefficients
-            .axis_iter(Axis(0))
-            .zip(core::iter::successors(Some(FieldElement::one()), |y| {
+            .axis_iter(Axis(0)) // ??? check 
+            .zip(core::iter::successors(Some(FieldElement::one()), |y| { // y_factor^0 , y_factor^1 
                 Some(y * y_factor)
             }))
             .map(|(row, y_power)| {
                 row.iter()
-                    .zip(core::iter::successors(Some(FieldElement::one()), |x| {
+                    .zip(core::iter::successors(Some(FieldElement::one()), |x| { // x_factor^0 , x_factor^1 
                         Some(x * x_factor)
                     }))
                     .map(|(coeff, x_power)| y_power.clone() * x_power * coeff)
@@ -68,13 +74,26 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
             })
             .collect::<alloc::vec::Vec<_>>(); // Collect all rows into a Vec of Vecs
 
-        let scaled_coefficient = Array2::from_shape_vec(
+        let scaled_coefficients = Array2::from_shape_vec(
             (self.coefficients.nrows(), self.coefficients.ncols()),
             scaled_coefficient.into_iter().flatten().collect()
         ).unwrap();
-        
+        // let mut scaled_coefficients = Array2::<FieldElement<F>>::default(self.coefficients.dim());
+        // let mut y_scalar: FieldElement<S> = FieldElement::one();
+        // y_scalar = y_scalar * y_factor;
+        // for (row_index,row )in self.coefficients.axis_iter(Axis(0)).enumerate() {
+        //     let mut x_scalar = FieldElement::one(); // Change to mutable variable
+        //     for (column_index, value) in row.iter().enumerate() {
+        //         let s_ij = scaled_coefficients.get_mut((row_index, column_index)).unwrap();
+        //         *s_ij = value * y_scalar.clone().to_extension() * x_scalar.clone().to_extension();// TODO :: check without cloning !!!
+        //         x_scalar = x_factor * x_scalar; // Update without reference
+        //     }
+        //     y_scalar = y_factor * y_scalar;
+        // }
+
+
         Self{
-            coefficients: scaled_coefficient, 
+            coefficients: scaled_coefficients, 
             x_degree: self.x_degree,
             y_degree: self.y_degree,
         }
@@ -580,18 +599,38 @@ mod tests {
             [FE::new(0), FE::new(0), FE::new(0)],
         ])
     }
+    fn polynomial_one() ->BivariatePolynomial<FE> {
+        BivariatePolynomial::new(array![
+            [FE::new(1), FE::new(1), FE::new(1)],
+            [FE::new(1), FE::new(1), FE::new(1)],
+            [FE::new(1), FE::new(1), FE::new(1)],
+        ])
+    }
 
     #[test]
-    fn test_scale_polynomial(){
-        let a = polynomial_a();
-        let scaled_a = a.scale(&FE::new(2), &FE::new(2));
-        let expected_a =         BivariatePolynomial::new(array![
-            [FE::new(3), FE::new(2), FE::new(0)],
-            [FE::new(0), FE::new(8), FE::new(8)],
-            [FE::new(0), FE::new(9), FE::new(0)],
+    fn test_scale_polynomial_x(){
+        let a = polynomial_one();
+        let scaled_a = a.scale(&FE::new(2), &FE::new(1));
+        let expected_a = BivariatePolynomial::new(array![
+            [FE::new(1), FE::new(2), FE::new(4)],
+            [FE::new(1), FE::new(2), FE::new(4)],
+            [FE::new(1), FE::new(2), FE::new(4)],
         ]);
         assert_eq!(scaled_a, expected_a)
     }
+    #[test]
+    fn test_scale_polynomial_y(){
+        let a = polynomial_one();
+        let scaled_a = a.scale(&FE::new(1), &FE::new(2));
+        let expected_a = BivariatePolynomial::new(array![
+            [FE::new(1), FE::new(1), FE::new(1)],
+            [FE::new(2), FE::new(2), FE::new(2)],
+            [FE::new(4), FE::new(4), FE::new(4)],
+        ]);
+        assert_eq!(scaled_a, expected_a)
+    }
+
+
 
     #[test]
     fn test_bivariate_polynomial_new() {

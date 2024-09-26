@@ -60,12 +60,13 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
         bipoly: &BivariatePolynomial<FieldElement<E>>,
         x_blowup_factor: usize,
         y_blowup_factor: usize,
-        domain_x_size: Option<usize>,
+        domain_x_size: Option<usize>, 
         domain_y_size: Option<usize>,
         offset_x: &FieldElement<F>,
         offset_y: &FieldElement<F>,
     ) -> Result<Array2<FieldElement<E>>, FFTError> {
         let scaled = bipoly.scale(offset_x,offset_y);
+        // change the root \zeta 
         BivariatePolynomial::evaluate_fft::<F>(&scaled, x_blowup_factor, y_blowup_factor, domain_x_size, domain_y_size)
     }
 
@@ -116,9 +117,10 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
         offset_x: &FieldElement<F>,
         offset_y: &FieldElement<F>,
     ) -> Result<Self, FFTError> {
-        let scaled = BivariatePolynomial::interpolate_fft::<F>(fft_evals)?;
-
-        Ok(scaled.scale(&offset_x.inv().unwrap(),&offset_y.inv().unwrap()))
+        let dd = BivariatePolynomial::interpolate_fft::<F>(fft_evals)?; // scaled 
+        let xx = dd.scale(&offset_x.inv().unwrap(),&offset_y.inv().unwrap());
+        Ok(xx)
+       // Ok(scaled.scale(&offset_x.inv().unwrap(),&offset_y.inv().unwrap()))
 
     }
 
@@ -153,7 +155,7 @@ mod tests {
         
         // let twiddles_y_array = Array1::from_ve
         // Array2::mapv(&self, f)
-        // [(x_0, y_0) , (x_1,y_0)] ... mapv
+        // [(x_0, y_0) , (x_1,y_0)] ... mapv 
         let fft_eval = BivariatePolynomial::evaluate_fft::<F>(&poly, 1,1,None, None).unwrap();
         // let naive_eval = poly.evaluate_slice(&twiddles);
 
@@ -175,7 +177,7 @@ mod tests {
 
     mod u64_field_tests {
         use super::*;
-        use lambdaworks_math::{field::test_fields::u64_test_field::U64TestField, msm::naive};
+        use lambdaworks_math::{fft, field::test_fields::u64_test_field::U64TestField, msm::naive};
 
         // FFT related tests
         type F = U64TestField;
@@ -201,6 +203,13 @@ mod tests {
             ])
         }
 
+        fn polynomial_j() -> BivariatePolynomial<FE> {
+            BivariatePolynomial::new(array![
+                [FE::new(1), FE::new(2), FE::new(0),FE::new(1)],
+                [FE::new(3), FE::new(4), FE::new(5),FE::new(7)],
+            ])
+        }
+
 
         #[test]
         fn test_evaluation_fft_with_naive_evaluation(){
@@ -209,6 +218,23 @@ mod tests {
             let (fft_eval, naive_eval) = gen_fft_and_naive_evaluation(a_poly);
             let mut naive_copy = naive_eval.clone();
             // naive_copy[[0, 0]] = FE::one();
+
+            #[cfg(debug_assertions)]
+            for row in naive_copy.axis_iter(Axis(0)) {
+                println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
+                // println!("{:?}","%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+            }
+            #[cfg(debug_assertions)]
+            println!("{:?}", "SEPARATOR NAIVE");
+            #[cfg(debug_assertions)]
+            for row in fft_eval.axis_iter(Axis(0)) {
+                println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
+                // println!("{:?}","%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+            }
+            #[cfg(debug_assertions)]
+            println!("{:?}", "SEPARATOR FFT");
+
+
             assert_eq!(fft_eval, naive_copy);
 
             let a_poly_interpolate = BivariatePolynomial::interpolate_fft::<F>(&fft_eval).unwrap();
@@ -265,7 +291,31 @@ mod tests {
 
                 
         }
+
+        #[test]
+        fn test_fft_ifft_is_determenistic(){
+            
+            let fft_coset_eval = BivariatePolynomial::evaluate_offset_fft::<F>(&polynomial_j(), 1, 1, None, None, &FE::new(3), &FE::new(2)).unwrap();
+            
+            let poly_a_after_fft_ifft= BivariatePolynomial::interpolate_offset_fft(&fft_coset_eval,  &FE::new(3), &FE::new(2)).unwrap();
+            
+            #[cfg(debug_assertions)]
+            for row in poly_a_after_fft_ifft.coefficients.axis_iter(Axis(0)) {
+                println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
+                // println!("{:?}","%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+            }
+            
+
+            #[cfg(debug_assertions)]
+            for row in polynomial_j().coefficients.axis_iter(Axis(0)) {
+                println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
+                // println!("{:?}","%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+            }
     
+
+
+            assert_eq!(polynomial_j(), poly_a_after_fft_ifft);
+        }
 
     }
 
