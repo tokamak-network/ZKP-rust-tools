@@ -88,8 +88,8 @@ impl SubcircuitManager {
     // TODO :: error handling , it will return \pi_X and \pi_Y
     pub fn generate_proof_polynomials(&self, u: BivariatePolynomial<FrElement>,v: BivariatePolynomial<FrElement>,w: BivariatePolynomial<FrElement>) -> (BivariatePolynomial<FrElement>, BivariatePolynomial<FrElement>){
         
-        let s = u.x_degree;
-        let d = self.max_constraints;
+        let s = u.coefficients.len_of(Axis(0));
+        let d = u.coefficients.len_of(Axis(1));
 
         let a_coset_y_evaluation = BivariatePolynomial::evaluate_offset_fft(&u, 1, 1, None, None, &FrElement::one() , &self.xi).unwrap();
         let b_coset_y_evaluation = BivariatePolynomial::evaluate_offset_fft(&v, 1, 1, None, None, &FrElement::one() , &self.xi).unwrap();
@@ -365,7 +365,7 @@ mod tests {
         
         let (pi_y, pi_x) = subcircuit_manager.generate_proof_polynomials(u, v, w);
         #[cfg(debug_assertions)]
-        for row in pi_x.coefficients.axis_iter(Axis(1)) {
+        for row in pi_x.coefficients.axis_iter(Axis(0)) {
             println!("{:?}", row.iter().map(|element| element.representative()).collect::<Vec<_>>());
             // println!("{:?}","%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
         }
