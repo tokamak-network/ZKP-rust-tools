@@ -3,16 +3,17 @@ use lambdaworks_math::field::traits::IsField;
 
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
+use lambdaworks_math::errors::ByteConversionError;
 
+use icicle_bls12_381::curve;
 
 
 pub trait IsCommitmentScheme<F: IsField> {
     type Commitment;
 
-
     fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
     fn commit_univariate(&self, bp: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
-
+    fn icicle_commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
 
     fn open(
         &self,
@@ -32,4 +33,19 @@ pub trait IsCommitmentScheme<F: IsField> {
         proofs: &(Self::Commitment,Self::Commitment),
     ) -> bool;
 
+}
+
+pub trait PointConversion {
+    fn to_icicle(&self) -> curve::G1Affine;
+    fn from_icicle(icicle: &curve::G1Projective) -> Result<Self, ByteConversionError>
+    where
+        Self: Sized;
+}
+
+pub trait ToIcicle {
+    fn to_icicle_scalar(&self) -> curve::ScalarField;
+    fn to_icicle(&self) -> curve::BaseField;
+    fn from_icicle(icicle: &curve::BaseField) -> Result<Self, ByteConversionError>
+    where
+        Self: Sized;
 }

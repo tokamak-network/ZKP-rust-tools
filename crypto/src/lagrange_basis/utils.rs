@@ -4,18 +4,21 @@ use lambdaworks_math::{
     cyclic_group::IsGroup,
     elliptic_curve::{
         short_weierstrass::curves::bls12_381::{
-            curve::BLS12381Curve,
+            // curve::BLS12381Curve,
             default_types::{FrElement, FrField},
         },
-        traits::IsEllipticCurve,
+        // traits::IsEllipticCurve,
     },
     fft::{
-        cpu::{bit_reversing::in_place_bit_reverse_permute, roots_of_unity},
+        cpu::{
+            // bit_reversing::in_place_bit_reverse_permute, 
+            roots_of_unity
+        },
         errors::FFTError,
     },
     field::traits::{IsPrimeField, RootsConfig},
-    polynomial::Polynomial,
-    unsigned_integer::element::U256,
+    // polynomial::Polynomial,
+    // unsigned_integer::element::U256,
 };
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
