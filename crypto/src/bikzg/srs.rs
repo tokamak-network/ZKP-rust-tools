@@ -321,8 +321,15 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
     
         stream.destroy().unwrap();
         let res = <ShortWeierstrassProjectivePoint<BLS12381Curve> as PointConversion>::from_icicle(&msm_host_result[0]).unwrap();
-        res
-        
+        // res
+        let expect = msm(
+            &coefficients_x_y,
+            &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree),
+        )
+        .expect("`points` is sliced by `cs`'s length");
+
+        assert_eq!(res, expect);
+        expect
     }
 
     fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment{
@@ -368,7 +375,7 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         let q_y_commitment = self.commit_univariate(&q_y);
         let icicle = self.icicle_commit_bivariate(&q_xy);
         // println!("q_xy_commitment: {:?}", q_xy_commitment);
-        (q_xy_commitment,q_y_commitment)
+        (icicle,q_y_commitment)
     }
 
     // should accept 2 commitment instead of 1
@@ -490,7 +497,7 @@ mod tests {
     // use super::{KateZaveruchaGoldberg, StructuredReferenceString};
     use rand::Rng;
 
-    type G1 = ShortWeierstrassProjectivePoint<BLS12381Curve>;
+    // type G1 = ShortWeierstrassProjectivePoint<BLS12381Curve>;
 
     use super::*;
 
