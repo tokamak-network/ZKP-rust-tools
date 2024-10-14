@@ -6,6 +6,10 @@ use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 use lambdaworks_math::errors::ByteConversionError;
 
 use icicle_bls12_381::curve;
+use icicle_bls12_381::curve::ScalarCfg;
+use icicle_core::field::Field;
+use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
+use crate::bikzg::BLS12381Curve;
 
 
 pub trait IsCommitmentScheme<F: IsField> {
@@ -14,6 +18,7 @@ pub trait IsCommitmentScheme<F: IsField> {
     fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
     fn commit_univariate(&self, bp: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
     fn icicle_commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
+    fn icicle_msm(scalar: Vec<Field<8, ScalarCfg>>, points: &Vec<curve::G1Affine> ) -> ShortWeierstrassProjectivePoint<BLS12381Curve>;
 
     fn open(
         &self,

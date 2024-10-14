@@ -5,8 +5,9 @@ use core::{marker::PhantomData, mem};
 use icicle_bls12_381::curve;
 use icicle_core::{error::IcicleError, msm, traits::FieldImpl};
 use icicle_cuda_runtime::{ memory::{DeviceVec, HostSlice}, stream::CudaStream};
-use icicle_bls12_381::curve::CurveCfg;
+use icicle_bls12_381::curve::{CurveCfg, ScalarCfg};
 use icicle_core::curve::Affine;
+use icicle_core::field::Field;
 
 use lambdaworks_math::{
     cyclic_group::IsGroup,
@@ -144,7 +145,6 @@ where
 
         add_usize(& mut serialized_data, self.dimention_x);
         add_usize(& mut serialized_data, self.dimention_y);
-
 
         // Second 8 bytes store the amount of G1 elements to be stored, this is more than can be indexed with a 64-bit architecture, and some millions of terabytes of data if the points were compressed
         let mut main_group_len_bytes: Vec<u8> = self.powers_main_group.len().to_le_bytes().to_vec();
@@ -285,6 +285,58 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
 {
     type Commitment = P::G1Point;
 
+    fn icicle_msm(
+        scalar: Vec<Field<8, ScalarCfg>>, 
+        points: &Vec<curve::G1Affine> 
+    ) -> ShortWeierstrassProjectivePoint<BLS12381Curve> where <P as IsPairing>::G1Point: Debug {
+        let config = None;
+        let mut cfg = config.unwrap_or(msm::MSMConfig::default());
+
+        let icicle_scalars = HostSlice::from_slice(&scalar);
+        let icicle_points = HostSlice::from_slice(&points);
+    
+        let mut msm_results = DeviceVec::<curve::G1Projective>::cuda_malloc(1).unwrap();
+        let stream = CudaStream::create().unwrap();
+        cfg.ctx.stream = &stream;
+        cfg.is_async = true;
+        msm::msm(icicle_scalars, icicle_points, &cfg, &mut msm_results[..]).unwrap();
+    
+        let mut msm_host_result = vec![curve::G1Projective::zero(); 1];
+    
+        stream.synchronize().unwrap();
+        msm_results.copy_to_host(HostSlice::from_mut_slice(&mut msm_host_result[..])).unwrap();
+    
+        stream.destroy().unwrap();
+        <ShortWeierstrassProjectivePoint<BLS12381Curve> as PointConversion>::from_icicle(&msm_host_result[0]).unwrap()
+        
+    }
+
+    // fn icicle_msm_uni(
+    //     scalar: Vec<Field<8, ScalarCfg>>, 
+    //     points: &Vec<curve::G1Affine> 
+    // ) -> ShortWeierstrassProjectivePoint<BLS12381Curve> where <P as IsPairing>::G1Point: Debug {
+    //     let config = None;
+    //     let mut cfg = config.unwrap_or(msm::MSMConfig::default());
+
+    //     let icicle_scalars = HostSlice::from_slice(&scalar);
+    //     let icicle_points = HostSlice::from_slice(&points);
+    
+    //     let mut msm_results = DeviceVec::<curve::G1Projective>::cuda_malloc(1).unwrap();
+    //     let stream = CudaStream::create().unwrap();
+    //     cfg.ctx.stream = &stream;
+    //     cfg.is_async = true;
+    //     msm::msm(icicle_scalars, icicle_points, &cfg, &mut msm_results[..]).unwrap();
+    
+    //     let mut msm_host_result = vec![curve::G1Projective::zero(); 1];
+    
+    //     stream.synchronize().unwrap();
+    //     msm_results.copy_to_host(HostSlice::from_mut_slice(&mut msm_host_result[..])).unwrap();
+    
+    //     stream.destroy().unwrap();
+    //     <ShortWeierstrassProjectivePoint<BLS12381Curve> as PointConversion>::from_icicle(&msm_host_result[0]).unwrap()
+        
+    // }
+
     fn icicle_commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment where <P as IsPairing>::G1Point: Debug {
         let coefficients_x_y: Vec<_> = bp.flatten_out()
             .iter()
@@ -301,35 +353,9 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         
         let g1_point = &self.srs.flatten_partitioned_g1_points_icicle(bp.x_degree, bp.y_degree);
 
-        // println!("length: {:?}", g1_point);
-        let config = None;
-        let mut cfg = config.unwrap_or(msm::MSMConfig::default());
-
-        let icicle_scalars = HostSlice::from_slice(&scalar);
-        let icicle_points = HostSlice::from_slice(&g1_point);
-    
-        let mut msm_results = DeviceVec::<curve::G1Projective>::cuda_malloc(1).unwrap();
-        let stream = CudaStream::create().unwrap();
-        cfg.ctx.stream = &stream;
-        cfg.is_async = true;
-        msm::msm(icicle_scalars, icicle_points, &cfg, &mut msm_results[..]).unwrap();
-    
-        let mut msm_host_result = vec![curve::G1Projective::zero(); 1];
-    
-        stream.synchronize().unwrap();
-        msm_results.copy_to_host(HostSlice::from_mut_slice(&mut msm_host_result[..])).unwrap();
-    
-        stream.destroy().unwrap();
-        let res = <ShortWeierstrassProjectivePoint<BLS12381Curve> as PointConversion>::from_icicle(&msm_host_result[0]).unwrap();
-        // res
-        let expect = msm(
-            &coefficients_x_y,
-            &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree),
-        )
-        .expect("`points` is sliced by `cs`'s length");
-
-        assert_eq!(res, expect);
-        expect
+        let res = Self::icicle_msm(scalar, g1_point);
+       
+        res
     }
 
     fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment{
@@ -337,12 +363,25 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
             .iter()
             .map(|coefficient| coefficient.representative())
             .collect();
-        
-        msm(
-            &coefficients_x_y,
-            &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree),
-        )
-        .expect("`points` is sliced by `cs`'s length")
+
+        // let g1_points = &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree);
+
+        let scalar: Vec<_> = coefficients_x_y.iter()
+            .map(|poly| {
+                let value = BLS12381FieldElement::from_hex_unchecked(&poly.to_hex());
+                let convert = ToIcicle::to_icicle_scalar(&value); 
+                convert
+            })
+            .collect(); 
+    
+        let g1_point = &self.srs.flatten_partitioned_g1_points_icicle(bp.x_degree, bp.y_degree);
+
+        // msm(
+        //     &coefficients_x_y,
+        //     g1_points,
+        // )
+        // .expect("`points` is sliced by `cs`'s length")
+        Self::icicle_msm(scalar, g1_point)
     }
 
     fn commit_univariate(&self, p: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment {
@@ -351,13 +390,23 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
             .iter()
             .map(|coefficient| coefficient.representative())
             .collect();
-        let first_col_powers_main_group: Vec<_> = self.srs.powers_main_group.iter().step_by(self.srs.dimention_x).cloned().collect();
-        msm(
-            &coefficients_y, &first_col_powers_main_group[..coefficients_y.len()]
-        ).expect("`points` is sliced by `cs`'s length")
-    }
 
-    
+        let scalar: Vec<_> = coefficients_y.iter()
+            .map(|poly| {
+                let value = BLS12381FieldElement::from_hex_unchecked(&poly.to_hex());
+                let convert = ToIcicle::to_icicle_scalar(&value); 
+                convert
+            })
+            .collect(); 
+
+        let first_col_powers_main_group: Vec<_> = self.srs.converted_g1_points.iter().step_by(self.srs.dimention_x).cloned().collect();
+
+        // msm(
+        //     &coefficients_y, &first_col_powers_main_group[..coefficients_y.len()]
+        // ).expect("`points` is sliced by `cs`'s length")
+
+        Self::icicle_msm(scalar,  &Vec::<Affine<CurveCfg>>::from(&first_col_powers_main_group[..coefficients_y.len()]))
+    }
 
     //not compeleted , should return 2 commitment, one for q_xy another for q_y
     fn open(
@@ -434,7 +483,6 @@ pub fn g1_points_srs(dims: (usize,usize), taus: (FrElement,FrElement)) -> Vec<Ve
             });
         two_dim_tau_g1.push(tau_g1);
     }
-    println!("powers_of_tau_theta: {:?}", two_dim_tau_g1[0][0]);
     two_dim_tau_g1
 
 }
