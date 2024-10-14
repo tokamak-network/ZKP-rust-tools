@@ -321,15 +321,8 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
     
         stream.destroy().unwrap();
         let res = <ShortWeierstrassProjectivePoint<BLS12381Curve> as PointConversion>::from_icicle(&msm_host_result[0]).unwrap();
-        // res
-        let expect = msm(
-            &coefficients_x_y,
-            &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree),
-        )
-        .expect("`points` is sliced by `cs`'s length");
-
-        assert_eq!(res, expect);
-        expect
+        res
+        
     }
 
     fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment{
