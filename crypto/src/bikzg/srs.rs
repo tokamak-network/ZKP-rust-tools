@@ -42,6 +42,12 @@ use crate::bikzg::G1Point;
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
 use core::fmt::Debug;
 
+use ndarray::{
+    s,  
+    Array2, 
+};
+use std::time::Instant;
+
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructuredReferenceString<G1Point, G2Point> {
     pub dimention_x: usize, 
@@ -289,8 +295,8 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         scalar: Vec<Field<8, ScalarCfg>>, 
         points: &Vec<curve::G1Affine> 
     ) -> ShortWeierstrassProjectivePoint<BLS12381Curve> where <P as IsPairing>::G1Point: Debug {
-        let config = None;
-        let mut cfg = config.unwrap_or(msm::MSMConfig::default());
+        // let config = None;
+        let mut cfg = msm::MSMConfig::default();
 
         let icicle_scalars = HostSlice::from_slice(&scalar);
         let icicle_points = HostSlice::from_slice(&points);
@@ -353,35 +359,38 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         
         let g1_point = &self.srs.flatten_partitioned_g1_points_icicle(bp.x_degree, bp.y_degree);
 
+        let start = Instant::now();
         let res = Self::icicle_msm(scalar, g1_point);
-       
+        println!(
+            "time duration ICICLE msm: {} ms",
+            start
+                .elapsed()
+                .as_millis()
+        );
         res
     }
 
     fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment{
         let coefficients_x_y: Vec<_> = bp.flatten_out()
-            .iter()
-            .map(|coefficient| coefficient.representative())
-            .collect();
+        .iter()
+        .map(|coefficient| coefficient.representative())
+        .collect();
+ 
+        let g1_points = &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree);
 
-        // let g1_points = &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree);
-
-        let scalar: Vec<_> = coefficients_x_y.iter()
-            .map(|poly| {
-                let value = BLS12381FieldElement::from_hex_unchecked(&poly.to_hex());
-                let convert = ToIcicle::to_icicle_scalar(&value); 
-                convert
-            })
-            .collect(); 
-    
-        let g1_point = &self.srs.flatten_partitioned_g1_points_icicle(bp.x_degree, bp.y_degree);
-
-        // msm(
-        //     &coefficients_x_y,
-        //     g1_points,
-        // )
-        // .expect("`points` is sliced by `cs`'s length")
-        Self::icicle_msm(scalar, g1_point)
+        let start2 = Instant::now();
+        let result = msm(
+            &coefficients_x_y,
+            g1_points,
+        )
+        .expect("`points` is sliced by `cs`'s length");
+        println!(
+            "time duration lambdaworks msm: {} ms",
+            start2
+                .elapsed()
+                .as_millis()
+        );
+        result
     }
 
     fn commit_univariate(&self, p: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment {
@@ -398,14 +407,15 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
                 convert
             })
             .collect(); 
+        
+        // let first_col_powers_main_group: Vec<_> = self.srs.converted_g1_points.iter().step_by(self.srs.dimention_x).cloned().collect();
+        let first_col_powers_main_group: Vec<_> = self.srs.powers_main_group.iter().step_by(self.srs.dimention_x).cloned().collect();
 
-        let first_col_powers_main_group: Vec<_> = self.srs.converted_g1_points.iter().step_by(self.srs.dimention_x).cloned().collect();
+        msm(
+            &coefficients_y, &first_col_powers_main_group[..coefficients_y.len()]
+        ).expect("`points` is sliced by `cs`'s length")
 
-        // msm(
-        //     &coefficients_y, &first_col_powers_main_group[..coefficients_y.len()]
-        // ).expect("`points` is sliced by `cs`'s length")
-
-        Self::icicle_msm(scalar,  &Vec::<Affine<CurveCfg>>::from(&first_col_powers_main_group[..coefficients_y.len()]))
+        // Self::icicle_msm(scalar,  &Vec::<Affine<CurveCfg>>::from(&first_col_powers_main_group[..coefficients_y.len()]))
     }
 
     //not compeleted , should return 2 commitment, one for q_xy another for q_y
@@ -419,12 +429,14 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         // let mut poly_to_commit = p - y;
         let poly_to_commit = p.sub_by_field_element(evaluation);
         let (q_xy, q_y) = poly_to_commit.ruffini_division(x,y);
+
         // commitment to q_y , I should change the SRS to be compatible with it 
-        let q_xy_commitment = self.commit_bivariate(&q_xy);
+        // let q_xy_commitment = self.commit_bivariate(&q_xy);
+        let q_xy_commitment = self.icicle_commit_bivariate(&q_xy);
+
         let q_y_commitment = self.commit_univariate(&q_y);
-        let icicle = self.icicle_commit_bivariate(&q_xy);
-        // println!("q_xy_commitment: {:?}", q_xy_commitment);
-        (icicle,q_y_commitment)
+        
+        (q_xy_commitment,q_y_commitment)
     }
 
     // should accept 2 commitment instead of 1
@@ -441,8 +453,6 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         let g2 = &self.srs.powers_secondary_group[0];
         let tau_g2 = &self.srs.powers_secondary_group[1];
         let tetha_g2 = &self.srs.powers_secondary_group[2];
-
-
 
         let e = P::compute_batch(&[
             (
@@ -576,7 +586,7 @@ mod tests {
             ],
         });
 
-        let g1_points_2d_vec = g1_points_srs((10,10), (tau_toxic_waste.clone(),tetha_toxic_waste.clone()));
+        let g1_points_2d_vec = g1_points_srs((512,512), (tau_toxic_waste.clone(),tetha_toxic_waste.clone()));
 
         let powers_main_group: Vec<_> = g1_points_2d_vec.into_iter().flatten().collect::<Vec<_>>();
         // println!("powers_main_group: {:?}", powers_main_group);
@@ -594,33 +604,48 @@ mod tests {
 
         ];
         // println!("{}", &converted_g1_points.type_id());
-        StructuredReferenceString::new(10, 10, &powers_main_group, &powers_secondary_group, &converted_g1_points)
+        StructuredReferenceString::new(512, 512, &powers_main_group, &powers_secondary_group, &converted_g1_points)
     }
 
     #[test]
     fn kzg_1() {
         // (x+1)(y+1) = xy + y + x + 1 
+        let start1 = Instant::now();
         let srs = create_srs();
         // let bytes = srs.as_bytes();
         let bikzg = KZG::new(srs);
-        // println!("bytes: {:?}", bytes);
-        // let p = Polynomial::<FrElement>::new(&[FieldElement::one(), FieldElement::one()]);
-        let coefficients = array![
-            [FrElement::from(1), FrElement::from(1)],
-            [FrElement::from(1), FrElement::from(1)]
-        ];
-        let bp = BivariatePolynomial::new(coefficients);
+        let matrix = Array2::from_elem((512, 512), FrElement::from(1)); 
+        let bp = BivariatePolynomial::new(matrix);
+
+        println!(
+            "Start data generation: {} ms",
+            start1
+                .elapsed()
+                .as_millis()
+        );
         // let (qxy, qy) = bp.ruffini_division(&-FieldElement::<FrField>::one(),& -FieldElement::<FrField>::one());
-        let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.commit_bivariate(&bp);
+        let start2 = Instant::now();
+        // let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.commit_bivariate(&bp);
+        let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.icicle_commit_bivariate(&bp);
+        println!(
+            "time duration p_commitment: {} ms",
+            start2
+                .elapsed()
+                .as_millis()
+        );
         let x = FieldElement::zero(); 
         let y = FrElement::from(10);
         let evaluation = bp.evaluate(&x, &y);
+        let start3 = Instant::now();
         let proof = bikzg.open(&x, &y, &evaluation,&bp);
+        println!(
+            "time duration for proof: {} ms",
+            start3
+                .elapsed()
+                .as_millis()
+        );
         // let fake_proof = (BLS12381Curve::generator(),BLS12381Curve::generator());
-        // println!("p_commitment: {:?}", p_commitment);
-        // println!("proof: {:?}", proof);
-        // println!("proof: {:?}", proof.0);
-        // println!("proof: {:?}", proof.1);
+        
         // assert_eq!(evaluation, FieldElement::zero());
         // assert_eq!(proof.0, BLS12381Curve::generator());
         // assert_eq!(proof.1, BLS12381Curve::generator());
@@ -658,7 +683,6 @@ mod tests {
         let proof = bikzg.open(&x, &y, &fake_evaluation,&bp);
         // let fake_proof = (BLS12381Curve::generator(),BLS12381Curve::generator());
         
-
         // assert_eq!(evaluation, FieldElement::zero());
         // assert_eq!(proof.0, BLS12381Curve::generator());
         // assert_eq!(proof.1, BLS12381Curve::generator());
@@ -689,8 +713,4 @@ mod tests {
             ]
         );
     }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 9d88f1d56cf8188e92efb1c0634c69321f74d5ff
