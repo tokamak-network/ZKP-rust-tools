@@ -3,15 +3,18 @@ use lambdaworks_math::{
     elliptic_curve::{
         short_weierstrass::curves::bls12_381::{
             curve::BLS12381Curve,
-            default_types::{FrElement, FrField},
+            default_types::{
+                FrElement, 
+                // FrField
+            },
         },
         traits::IsEllipticCurve,
     },
-    fft::{
-        cpu::{bit_reversing::in_place_bit_reverse_permute, roots_of_unity},
-        errors::FFTError,
-    },
-    field::traits::{IsPrimeField, RootsConfig},
+    // fft::{
+        // cpu::{bit_reversing::in_place_bit_reverse_permute, roots_of_unity},
+        // errors::FFTError,
+    // },
+    // field::traits::{IsPrimeField, RootsConfig},
     polynomial::Polynomial,
     unsigned_integer::element::U256,
 };
@@ -153,37 +156,37 @@ pub fn in_place_nr_2radix_fft_g(input: &mut [G1Point], twiddles: &[FrElement]) {
 mod tests {
     // use lambdaworks_math::{fft::polynomial::FFTPoly, msm::naive::msm, polynomial::Polynomial};
 
-    use crate::bikzg::srs::g1_points_srs;
+    // use crate::bikzg::srs::g1_points_srs;
 
-    use super::*;
+    // use super::*;
 
     #[test]
     fn test_to_lagrange_basis() {
-        let srs = g1_points_srs((2,3), (FrElement::from(2),FrElement::from(3)));
+        // let srs = g1_points_srs((2,3), (FrElement::from(2),FrElement::from(3)));
 
-        let coefficients = vec![
-            FrElement::from(6),
-            FrElement::from(28),
-            FrElement::from(31),
-            FrElement::from(85),
-            FrElement::from(30),
-            FrElement::from(71),
-            FrElement::from(79),
-            FrElement::from(58),
-        ];
+        // let coefficients = vec![
+        //     FrElement::from(6),
+        //     FrElement::from(28),
+        //     FrElement::from(31),
+        //     FrElement::from(85),
+        //     FrElement::from(30),
+        //     FrElement::from(71),
+        //     FrElement::from(79),
+        //     FrElement::from(58),
+        // ];
 
         // Compute the polynomial commitment in two different ways
-        let polynomial = Polynomial::new(&coefficients);
+        // let polynomial = Polynomial::new(&coefficients);
 
         // 1. Compute the polynomial commitment using polynomial coefficients and powers of tau
         // C = c0 [tau^0 * G] + c1 [tau^1 * G] + ... + cn [tau^n * G]
         // where c0, c1, ..., cn are the coefficients of the polynomial
         // tau^i * G for i = 0, 1, ..., n are the powers of tau
-        let cs = polynomial
-            .coefficients()
-            .iter()
-            .map(|c| c.representative())
-            .collect::<Vec<_>>();
+        // let cs = polynomial
+        //     .coefficients()
+        //     .iter()
+        //     .map(|c| c.representative())
+        //     .collect::<Vec<_>>();
         // let commitment1 = msm(&cs, &srs).unwrap();
 
         // 2. Compute the polynomial commitment using SRS in Lagrange basis, and polynomial evaluations

@@ -12,7 +12,10 @@ lambdaworks-groth16 = {  git="https://github.com/lambdaclass/lambdaworks.git",ve
 sha3 = { version = "0.10", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 ndarray = { version = "0.16.1", default-features = false }
-
+icicle-cuda-runtime = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v2.7.0" }
+icicle-core = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v2.7.0" }
+icicle-bls12-377 = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v2.7.0"}
+icicle-bls12-381 = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v2.7.0" }
 
 # Optional
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
@@ -21,7 +24,7 @@ rayon = { version = "1.8.0" }
 rand = "0.8.5"
 
 [dev-dependencies]
-criterion = "0.4"
+criterion = "0.5.1"
 iai-callgrind.workspace = true
 rand = "0.8.5"
 rand_chacha = "0.3.1"

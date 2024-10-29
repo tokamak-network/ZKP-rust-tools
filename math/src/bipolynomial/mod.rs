@@ -1,12 +1,19 @@
 use crate::alloc::borrow::ToOwned;
-use core::array;
+// use core::array;
 use core::ops::{Add, Sub};
-use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::default_types::FrElement;
-use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bn_254::pairing::X;
+// use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::default_types::FrElement;
+// use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bn_254::pairing::X;
 use lambdaworks_math::field::element::FieldElement;
 use lambdaworks_math::field::traits::{IsField, IsSubFieldOf};
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
-use ndarray::{s, Array, Array2, ArrayBase, Axis, Ix2};
+use ndarray::{
+    s, 
+    // Array, 
+    Array2, 
+    // ArrayBase, 
+    Axis, 
+    // Ix2
+};
 
 /// Represents the polynomial (c_00 + c_01 * X + c_02 * X^2 + ... + c_0n * X^n) * Y^0 +
 ///                           (c_10 + c_11 * X + c_12 * X^2 + ... + c_1n * X^n) * Y^1 + ... +
@@ -197,9 +204,9 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
     }
 
     // TODO :: create a new function which recieve 2 univariate polynomial and multiply them together and create a bivariate polynomial 
-    pub fn compose_from_univariate(F_X: UnivariatePolynomial<FieldElement<F>>, F_Y: UnivariatePolynomial<FieldElement<F>>) -> Self {
-        todo!()
-    }
+    // pub fn compose_from_univariate(F_X: UnivariatePolynomial<FieldElement<F>>, F_Y: UnivariatePolynomial<FieldElement<F>>) -> Self {
+    //     todo!()
+    // }
 
 
 }   
