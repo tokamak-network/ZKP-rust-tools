@@ -8,7 +8,7 @@ use lambdaworks_math::field::traits::{IsField, IsSubFieldOf};
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 use ndarray::{
     s, 
-    // Array, 
+    Array, 
     Array2, 
     // ArrayBase, 
     Axis, 
