@@ -2,7 +2,10 @@ use std::{error::Error, fmt};
 
 use lambdaworks_math::{
     elliptic_curve::short_weierstrass::curves::bls12_381::default_types::{FrElement, FrField},
-    fft::{errors::FFTError, polynomial::evaluate_fft_cpu},
+    fft::{
+        errors::FFTError, 
+        // polynomial::evaluate_fft_cpu
+    },
     msm::{naive::MSMError, pippenger::parallel_msm_with},
     polynomial::Polynomial,
 };
@@ -46,7 +49,9 @@ pub struct Prover {
 
 impl Prover {
     /// Create a new prover instance
-    pub fn new(poly: Polynomial<FrElement>) -> Result<Self, ProverError> {
+    pub fn new(
+        // poly: Polynomial<FrElement>
+    ) -> Result<Self, ProverError> {
         // let eval = poly.evaluate_fft(2, None)?;
         // Ok(Prover { poly_eval: eval })
         // Err(ProverError::from("sdf"))
@@ -110,7 +115,7 @@ impl Prover {
             .map(|(w, e)| (w * e))
             .collect::<Vec<_>>();
 
-        let witness_eval = Polynomial::evaluate_fft::<FrField>(witness, 1, None).unwrap();// witness.evaluate_fft(2, None)?;
+        // let witness_eval = Polynomial::evaluate_fft::<FrField>(witness, 1, None).unwrap();// witness.evaluate_fft(2, None)?;
 
 
         let polynomial = Polynomial::interpolate_fft::<FrField>(&evaluations)?;

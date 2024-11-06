@@ -2,27 +2,45 @@ use std::ops::Mul;
 
 use core::{marker::PhantomData, mem};
 
+use icicle_bls12_381::curve;
+use icicle_core::{error::IcicleError, msm, traits::FieldImpl};
+use icicle_cuda_runtime::{ memory::{DeviceVec, HostSlice}, stream::CudaStream};
+use icicle_bls12_381::curve::{CurveCfg, ScalarCfg};
+use icicle_core::curve::Affine;
+use icicle_core::field::Field;
+
 use lambdaworks_math::{
     cyclic_group::IsGroup,
     elliptic_curve::{
-        short_weierstrass::{curves::bls12_381::{curve::BLS12381Curve, default_types::FrElement}, point::ShortWeierstrassProjectivePoint},
+        short_weierstrass::{
+            curves::bls12_381::{
+                curve::{
+                    BLS12381Curve, 
+                    BLS12381FieldElement}
+                , 
+                default_types::FrElement,
+                pairing::BLS12381AtePairing,
+            }, 
+            point::ShortWeierstrassProjectivePoint
+        },
         traits::IsEllipticCurve,
     },
-    traits::{AsBytes, Deserializable},
-    errors::DeserializationError,
+    traits::{AsBytes, Deserializable, ByteConversion},
+    errors::{DeserializationError, ByteConversionError},
     field::{element::FieldElement, traits::IsPrimeField},
     elliptic_curve::traits::IsPairing,
     msm::pippenger::msm,
     unsigned_integer::element::UnsignedInteger,
 };
 
-use crate::bikzg::traits::IsCommitmentScheme;
+use crate::bikzg::traits::{IsCommitmentScheme, PointConversion, ToIcicle};
 
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 
 use rayon::prelude::*;
 use crate::bikzg::G1Point;
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+use core::fmt::Debug;
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructuredReferenceString<G1Point, G2Point> {
@@ -30,26 +48,79 @@ pub struct StructuredReferenceString<G1Point, G2Point> {
     pub dimention_y: usize,
     pub powers_main_group: Vec<G1Point>,
     pub powers_secondary_group: [G2Point; 3],// 1 , tau, theta 
+    pub converted_g1_points: Vec<Affine<CurveCfg>>
 }
 
+type BlsG1point = ShortWeierstrassProjectivePoint<BLS12381Curve>;
+
+impl PointConversion for BlsG1point {
+    fn to_icicle(&self) -> curve::G1Affine {
+        let s = self.to_affine();
+        let x = s.x().to_icicle();
+        let y = s.y().to_icicle();
+        curve::G1Affine { x, y }
+    }
+
+    fn from_icicle(icicle: &curve::G1Projective) -> Result<Self, ByteConversionError> {
+        Ok(Self::new([
+            ToIcicle::from_icicle(&icicle.x)?,
+            ToIcicle::from_icicle(&icicle.y)?,
+            ToIcicle::from_icicle(&icicle.z)?,
+        ]))
+    }
+}
+
+impl ToIcicle for BLS12381FieldElement {
+    fn to_icicle_scalar(&self) -> curve::ScalarField {
+        let scalar_bytes = self.to_bytes_le();
+        curve::ScalarField::from_bytes_le(&scalar_bytes)
+    }
+
+    fn to_icicle(&self) -> curve::BaseField {
+        curve::BaseField::from_bytes_le(&self.to_bytes_le())
+    }
+
+    fn from_icicle(icicle: &curve::BaseField) -> Result<Self, ByteConversionError> {
+        Self::from_bytes_le(&icicle.to_bytes_le())
+    }
+}
 
 impl<G1Point, G2Point> StructuredReferenceString<G1Point, G2Point>
 where
     G1Point: IsGroup,
     G2Point: IsGroup,
 {
-    pub fn new(dim_x: usize, dim_y: usize,powers_main_group: &[G1Point], powers_secondary_group: &[G2Point; 3]) -> Self {
+    pub fn new(
+        dim_x: usize, 
+        dim_y: usize,
+        powers_main_group: &[G1Point], 
+        powers_secondary_group: &[G2Point; 3], 
+        converted_g1_points: &Vec<Affine<CurveCfg>>,
+    ) -> Self {
         Self {
             dimention_x: dim_x, 
             dimention_y: dim_y,
             powers_main_group: powers_main_group.into(),
             powers_secondary_group: powers_secondary_group.clone(),
+            converted_g1_points: converted_g1_points.clone()
         }
     }
 
     pub fn flatten_partitioned_g1_points(&self, x_len: usize, y_len: usize) -> Vec<G1Point> {
         let mut chunk_iter = self.powers_main_group.chunks(self.dimention_x);
         let mut output: Vec<G1Point> = vec![];
+        for _ in 0..y_len{
+            // let dd = chunk_iter.next();
+            // dd.iter().take(x_len).cloned().collect();
+            output.extend( chunk_iter.next().unwrap().iter().take(x_len).cloned());
+        }
+
+        output
+    }
+
+    pub fn flatten_partitioned_g1_points_icicle(&self, x_len: usize, y_len: usize) -> Vec<Affine<CurveCfg>> {
+        let mut chunk_iter = self.converted_g1_points.chunks(self.dimention_x);
+        let mut output: Vec<Affine<CurveCfg>> = vec![];
         for _ in 0..y_len{
             // let dd = chunk_iter.next();
             // dd.iter().take(x_len).cloned().collect();
@@ -75,10 +146,9 @@ where
         add_usize(& mut serialized_data, self.dimention_x);
         add_usize(& mut serialized_data, self.dimention_y);
 
-
         // Second 8 bytes store the amount of G1 elements to be stored, this is more than can be indexed with a 64-bit architecture, and some millions of terabytes of data if the points were compressed
         let mut main_group_len_bytes: Vec<u8> = self.powers_main_group.len().to_le_bytes().to_vec();
-
+        // println!("main_group_len_bytes: {:?}", main_group_len_bytes);
         // For architectures with less than 64 bits for pointers
         // We add extra zeros at the end
         while main_group_len_bytes.len() < 8 {
@@ -119,78 +189,79 @@ where
     G2Point: IsGroup + Deserializable,
 {
     fn deserialize(bytes: &[u8]) -> Result<Self, DeserializationError> {
-        const X_DIMENTION_LEN_START: usize = 4; 
-        const X_DIMENTION_LEN_END: usize = 12; 
+    //     const X_DIMENTION_LEN_START: usize = 4; 
+    //     const X_DIMENTION_LEN_END: usize = 12; 
 
-        const Y_DIMENTION_LEN_START: usize = 12; 
-        const Y_DIMENTION_LEN_END: usize = 20; 
+    //     const Y_DIMENTION_LEN_START: usize = 12; 
+    //     const Y_DIMENTION_LEN_END: usize = 20; 
    
-        const MAIN_GROUP_LEN_OFFSET: usize = 20;
-        const MAIN_GROUP_OFFSET: usize = 28;
+    //     const MAIN_GROUP_LEN_OFFSET: usize = 20;
+    //     const MAIN_GROUP_OFFSET: usize = 28;
 
-        let x_dim_len_u64 = u64::from_le_bytes(
-            // This unwrap can't fail since we are fixing the size of the slice
-            bytes[X_DIMENTION_LEN_START..X_DIMENTION_LEN_END]
-                .try_into()
-                .unwrap(),
-        );
+    //     let x_dim_len_u64 = u64::from_le_bytes(
+    //         // This unwrap can't fail since we are fixing the size of the slice
+    //         bytes[X_DIMENTION_LEN_START..X_DIMENTION_LEN_END]
+    //             .try_into()
+    //             .unwrap(),
+    //     );
 
-        let x_dim_len = usize::try_from(x_dim_len_u64)
-        .map_err(|_| DeserializationError::PointerSizeError)?;
+    //     let x_dim_len = usize::try_from(x_dim_len_u64)
+    //     .map_err(|_| DeserializationError::PointerSizeError)?;
 
-        let y_dim_len_u64 = u64::from_le_bytes(
-            // This unwrap can't fail since we are fixing the size of the slice
-            bytes[Y_DIMENTION_LEN_START..Y_DIMENTION_LEN_END]
-                .try_into()
-                .unwrap(),
-        );
+    //     let y_dim_len_u64 = u64::from_le_bytes(
+    //         // This unwrap can't fail since we are fixing the size of the slice
+    //         bytes[Y_DIMENTION_LEN_START..Y_DIMENTION_LEN_END]
+    //             .try_into()
+    //             .unwrap(),
+    //     );
 
-        let y_dim_len = usize::try_from(y_dim_len_u64)
-        .map_err(|_| DeserializationError::PointerSizeError)?;
+    //     let y_dim_len = usize::try_from(y_dim_len_u64)
+    //     .map_err(|_| DeserializationError::PointerSizeError)?;
 
-        let main_group_len_u64 = u64::from_le_bytes(
-            // This unwrap can't fail since we are fixing the size of the slice
-            bytes[MAIN_GROUP_LEN_OFFSET..MAIN_GROUP_OFFSET]
-                .try_into()
-                .unwrap(),
-        );
+    //     let main_group_len_u64 = u64::from_le_bytes(
+    //         // This unwrap can't fail since we are fixing the size of the slice
+    //         bytes[MAIN_GROUP_LEN_OFFSET..MAIN_GROUP_OFFSET]
+    //             .try_into()
+    //             .unwrap(),
+    //     );
 
-        let main_group_len = usize::try_from(main_group_len_u64)
-            .map_err(|_| DeserializationError::PointerSizeError)?;
+    //     let main_group_len = usize::try_from(main_group_len_u64)
+    //         .map_err(|_| DeserializationError::PointerSizeError)?;
 
-        let mut main_group: Vec<G1Point> = Vec::new();
-        let mut secondary_group: Vec<G2Point> = Vec::new();
+    //     let mut main_group: Vec<G1Point> = Vec::new();
+    //     let mut secondary_group: Vec<G2Point> = Vec::new();
 
-        let size_g1_point = mem::size_of::<G1Point>();
-        let size_g2_point = mem::size_of::<G2Point>();
+    //     let size_g1_point = mem::size_of::<G1Point>();
+    //     let size_g2_point = mem::size_of::<G2Point>();
 
-        for i in 0..main_group_len {
-            // The second unwrap shouldn't fail since the amount of bytes is fixed
-            let point = G1Point::deserialize(
-                bytes[i * size_g1_point + MAIN_GROUP_OFFSET
-                    ..i * size_g1_point + size_g1_point + MAIN_GROUP_OFFSET]
-                    .try_into()
-                    .unwrap(),
-            )?;
-            main_group.push(point);
-        }
+    //     for i in 0..main_group_len {
+    //         // The second unwrap shouldn't fail since the amount of bytes is fixed
+    //         let point = G1Point::deserialize(
+    //             bytes[i * size_g1_point + MAIN_GROUP_OFFSET
+    //                 ..i * size_g1_point + size_g1_point + MAIN_GROUP_OFFSET]
+    //                 .try_into()
+    //                 .unwrap(),
+    //         )?;
+    //         main_group.push(point);
+    //     }
 
-        let g2s_offset = size_g1_point * main_group_len + 28;
-        for i in 0..3 {
-            // The second unwrap shouldn't fail since the amount of bytes is fixed
-            let point = G2Point::deserialize(
-                bytes[i * size_g2_point + g2s_offset
-                    ..i * size_g2_point + g2s_offset + size_g2_point]
-                    .try_into()
-                    .unwrap(),
-            )?;
-            secondary_group.push(point);
-        }
+    //     let g2s_offset = size_g1_point * main_group_len + 28;
+    //     for i in 0..3 {
+    //         // The second unwrap shouldn't fail since the amount of bytes is fixed
+    //         let point = G2Point::deserialize(
+    //             bytes[i * size_g2_point + g2s_offset
+    //                 ..i * size_g2_point + g2s_offset + size_g2_point]
+    //                 .try_into()
+    //                 .unwrap(),
+    //         )?;
+    //         secondary_group.push(point);
+    //     }
 
-        let secondary_group_slice = [secondary_group[0].clone(), secondary_group[1].clone(), secondary_group[2].clone()];
+    //     let secondary_group_slice = [secondary_group[0].clone(), secondary_group[1].clone(), secondary_group[2].clone()];
 
-        let srs = StructuredReferenceString::new(x_dim_len,y_dim_len,&main_group, &secondary_group_slice);
-        Ok(srs)
+    //     // let srs = StructuredReferenceString::new(x_dim_len,y_dim_len,&main_group, &secondary_group_slice);
+    //     // Ok(srs)
+        todo!()
     }
 }
 
@@ -209,23 +280,108 @@ impl<F: IsPrimeField, P: IsPairing> BivariateKateZaveruchaGoldberg<F, P> {
         }
     }
 }
-impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P: IsPairing>
+impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P: IsPairing<G1Point = ShortWeierstrassProjectivePoint<BLS12381Curve>>>
     IsCommitmentScheme<F> for BivariateKateZaveruchaGoldberg<F, P>
 {
     type Commitment = P::G1Point;
+
+    fn icicle_msm(
+        scalar: Vec<Field<8, ScalarCfg>>, 
+        points: &Vec<curve::G1Affine> 
+    ) -> ShortWeierstrassProjectivePoint<BLS12381Curve> where <P as IsPairing>::G1Point: Debug {
+        let config = None;
+        let mut cfg = config.unwrap_or(msm::MSMConfig::default());
+
+        let icicle_scalars = HostSlice::from_slice(&scalar);
+        let icicle_points = HostSlice::from_slice(&points);
+    
+        let mut msm_results = DeviceVec::<curve::G1Projective>::cuda_malloc(1).unwrap();
+        let stream = CudaStream::create().unwrap();
+        cfg.ctx.stream = &stream;
+        cfg.is_async = true;
+        msm::msm(icicle_scalars, icicle_points, &cfg, &mut msm_results[..]).unwrap();
+    
+        let mut msm_host_result = vec![curve::G1Projective::zero(); 1];
+    
+        stream.synchronize().unwrap();
+        msm_results.copy_to_host(HostSlice::from_mut_slice(&mut msm_host_result[..])).unwrap();
+    
+        stream.destroy().unwrap();
+        <ShortWeierstrassProjectivePoint<BLS12381Curve> as PointConversion>::from_icicle(&msm_host_result[0]).unwrap()
+        
+    }
+
+    // fn icicle_msm_uni(
+    //     scalar: Vec<Field<8, ScalarCfg>>, 
+    //     points: &Vec<curve::G1Affine> 
+    // ) -> ShortWeierstrassProjectivePoint<BLS12381Curve> where <P as IsPairing>::G1Point: Debug {
+    //     let config = None;
+    //     let mut cfg = config.unwrap_or(msm::MSMConfig::default());
+
+    //     let icicle_scalars = HostSlice::from_slice(&scalar);
+    //     let icicle_points = HostSlice::from_slice(&points);
+    
+    //     let mut msm_results = DeviceVec::<curve::G1Projective>::cuda_malloc(1).unwrap();
+    //     let stream = CudaStream::create().unwrap();
+    //     cfg.ctx.stream = &stream;
+    //     cfg.is_async = true;
+    //     msm::msm(icicle_scalars, icicle_points, &cfg, &mut msm_results[..]).unwrap();
+    
+    //     let mut msm_host_result = vec![curve::G1Projective::zero(); 1];
+    
+    //     stream.synchronize().unwrap();
+    //     msm_results.copy_to_host(HostSlice::from_mut_slice(&mut msm_host_result[..])).unwrap();
+    
+    //     stream.destroy().unwrap();
+    //     <ShortWeierstrassProjectivePoint<BLS12381Curve> as PointConversion>::from_icicle(&msm_host_result[0]).unwrap()
+        
+    // }
+
+    fn icicle_commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment where <P as IsPairing>::G1Point: Debug {
+        let coefficients_x_y: Vec<_> = bp.flatten_out()
+            .iter()
+            .map(|coefficient| coefficient.representative())
+            .collect();
+
+        let scalar: Vec<_> = coefficients_x_y.iter()
+            .map(|poly| {
+                let value = BLS12381FieldElement::from_hex_unchecked(&poly.to_hex());
+                let convert = ToIcicle::to_icicle_scalar(&value); 
+                convert
+            })
+            .collect(); 
+        
+        let g1_point = &self.srs.flatten_partitioned_g1_points_icicle(bp.x_degree, bp.y_degree);
+
+        let res = Self::icicle_msm(scalar, g1_point);
+       
+        res
+    }
 
     fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment{
         let coefficients_x_y: Vec<_> = bp.flatten_out()
             .iter()
             .map(|coefficient| coefficient.representative())
             .collect();
-        
 
-        msm(
-            &coefficients_x_y,
-            &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree),
-        )
-        .expect("`points` is sliced by `cs`'s length")
+        // let g1_points = &self.srs.flatten_partitioned_g1_points(bp.x_degree, bp.y_degree);
+
+        let scalar: Vec<_> = coefficients_x_y.iter()
+            .map(|poly| {
+                let value = BLS12381FieldElement::from_hex_unchecked(&poly.to_hex());
+                let convert = ToIcicle::to_icicle_scalar(&value); 
+                convert
+            })
+            .collect(); 
+    
+        let g1_point = &self.srs.flatten_partitioned_g1_points_icicle(bp.x_degree, bp.y_degree);
+
+        // msm(
+        //     &coefficients_x_y,
+        //     g1_points,
+        // )
+        // .expect("`points` is sliced by `cs`'s length")
+        Self::icicle_msm(scalar, g1_point)
     }
 
     fn commit_univariate(&self, p: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment {
@@ -234,13 +390,23 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
             .iter()
             .map(|coefficient| coefficient.representative())
             .collect();
-        let first_col_powers_main_group: Vec<_> = self.srs.powers_main_group.iter().step_by(self.srs.dimention_x).cloned().collect();
-        msm(
-            &coefficients_y, &first_col_powers_main_group[..coefficients_y.len()]
-        ).expect("`points` is sliced by `cs`'s length")
-    }
 
-    
+        let scalar: Vec<_> = coefficients_y.iter()
+            .map(|poly| {
+                let value = BLS12381FieldElement::from_hex_unchecked(&poly.to_hex());
+                let convert = ToIcicle::to_icicle_scalar(&value); 
+                convert
+            })
+            .collect(); 
+
+        let first_col_powers_main_group: Vec<_> = self.srs.converted_g1_points.iter().step_by(self.srs.dimention_x).cloned().collect();
+
+        // msm(
+        //     &coefficients_y, &first_col_powers_main_group[..coefficients_y.len()]
+        // ).expect("`points` is sliced by `cs`'s length")
+
+        Self::icicle_msm(scalar,  &Vec::<Affine<CurveCfg>>::from(&first_col_powers_main_group[..coefficients_y.len()]))
+    }
 
     //not compeleted , should return 2 commitment, one for q_xy another for q_y
     fn open(
@@ -256,7 +422,9 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         // commitment to q_y , I should change the SRS to be compatible with it 
         let q_xy_commitment = self.commit_bivariate(&q_xy);
         let q_y_commitment = self.commit_univariate(&q_y);
-        (q_xy_commitment,q_y_commitment)
+        let icicle = self.icicle_commit_bivariate(&q_xy);
+        // println!("q_xy_commitment: {:?}", q_xy_commitment);
+        (icicle,q_y_commitment)
     }
 
     // should accept 2 commitment instead of 1
@@ -302,8 +470,8 @@ pub fn g1_points_srs(dims: (usize,usize), taus: (FrElement,FrElement)) -> Vec<Ve
     // Generate powers of tau: tau^1, tau^2, ..., tau^n
     let powers_of_tau_theta = vandemonde_challenge(&taus.0, &taus.1, dims.0, dims.1);
 
-    let g1: ShortWeierstrassProjectivePoint<BLS12381Curve>   = <BLS12381Curve as IsEllipticCurve>::generator();
-    let mut two_dim_tau_g1: Vec<Vec<ShortWeierstrassProjectivePoint<BLS12381Curve>>> = Vec::with_capacity(dims.0);
+    let g1: BlsG1point = <BLS12381Curve as IsEllipticCurve>::generator();
+    let mut two_dim_tau_g1: Vec<Vec<BlsG1point>> = Vec::with_capacity(dims.0);
    
     for i in 0..dims.0 {
         let mut tau_g1 = vec![g1.clone(); dims.1];
@@ -315,7 +483,6 @@ pub fn g1_points_srs(dims: (usize,usize), taus: (FrElement,FrElement)) -> Vec<Ve
             });
         two_dim_tau_g1.push(tau_g1);
     }
-
     two_dim_tau_g1
 
 }
@@ -352,7 +519,11 @@ mod tests {
             short_weierstrass::{
                 curves::bls12_381::{
                     curve::BLS12381Curve,
-                    default_types::{FrConfig, FrElement, FrField},
+                    default_types::{
+                        // FrConfig, 
+                        FrElement, 
+                        FrField
+                    },
                     pairing::BLS12381AtePairing,
                     twist::BLS12381TwistCurve,
                 },
@@ -361,11 +532,11 @@ mod tests {
             traits::{IsEllipticCurve, IsPairing},
         },
         field::element::FieldElement,
-        polynomial::Polynomial,
-        traits::{AsBytes, Deserializable},
+        
+        // traits::{AsBytes, Deserializable},
         unsigned_integer::element::U256,
     };
-    use ndarray::{s, Array, Array2, Axis, Ix2};
+    // use ndarray::{s, Array, Array2, Axis, Ix2};
     use ndarray::array;
 
 
@@ -374,7 +545,7 @@ mod tests {
     // use super::{KateZaveruchaGoldberg, StructuredReferenceString};
     use rand::Rng;
 
-    type G1 = ShortWeierstrassProjectivePoint<BLS12381Curve>;
+    // type G1 = ShortWeierstrassProjectivePoint<BLS12381Curve>;
 
     use super::*;
 
@@ -407,10 +578,13 @@ mod tests {
 
         let g1_points_2d_vec = g1_points_srs((10,10), (tau_toxic_waste.clone(),tetha_toxic_waste.clone()));
 
-        
-        let powers_main_group: Vec<_> = g1_points_2d_vec.into_iter().flatten().collect();
-
-        let g1 = BLS12381Curve::generator();
+        let powers_main_group: Vec<_> = g1_points_2d_vec.into_iter().flatten().collect::<Vec<_>>();
+        // println!("powers_main_group: {:?}", powers_main_group);
+        let converted_g1_points = powers_main_group
+            .iter()
+            .map(|point| PointConversion::to_icicle(point))
+            .collect::<Vec<_>>();
+        // let g1 = BLS12381Curve::generator();
         let g2 = BLS12381TwistCurve::generator();
 
         let powers_secondary_group = [
@@ -419,13 +593,17 @@ mod tests {
             g2.operate_with_self(tetha_toxic_waste.representative()),
 
         ];
-        StructuredReferenceString::new(10,10,&powers_main_group, &powers_secondary_group)
+        // println!("{}", &converted_g1_points.type_id());
+        StructuredReferenceString::new(10, 10, &powers_main_group, &powers_secondary_group, &converted_g1_points)
     }
 
     #[test]
     fn kzg_1() {
         // (x+1)(y+1) = xy + y + x + 1 
-        let bikzg = KZG::new(create_srs());
+        let srs = create_srs();
+        // let bytes = srs.as_bytes();
+        let bikzg = KZG::new(srs);
+        // println!("bytes: {:?}", bytes);
         // let p = Polynomial::<FrElement>::new(&[FieldElement::one(), FieldElement::one()]);
         let coefficients = array![
             [FrElement::from(1), FrElement::from(1)],
@@ -438,9 +616,11 @@ mod tests {
         let y = FrElement::from(10);
         let evaluation = bp.evaluate(&x, &y);
         let proof = bikzg.open(&x, &y, &evaluation,&bp);
-        let fake_proof = (BLS12381Curve::generator(),BLS12381Curve::generator());
-        
-
+        // let fake_proof = (BLS12381Curve::generator(),BLS12381Curve::generator());
+        // println!("p_commitment: {:?}", p_commitment);
+        // println!("proof: {:?}", proof);
+        // println!("proof: {:?}", proof.0);
+        // println!("proof: {:?}", proof.1);
         // assert_eq!(evaluation, FieldElement::zero());
         // assert_eq!(proof.0, BLS12381Curve::generator());
         // assert_eq!(proof.1, BLS12381Curve::generator());
@@ -476,7 +656,7 @@ mod tests {
         let evaluation = bp.evaluate(&x, &y);
         let fake_evaluation = FrElement::from(1000);
         let proof = bikzg.open(&x, &y, &fake_evaluation,&bp);
-        let fake_proof = (BLS12381Curve::generator(),BLS12381Curve::generator());
+        // let fake_proof = (BLS12381Curve::generator(),BLS12381Curve::generator());
         
 
         // assert_eq!(evaluation, FieldElement::zero());
