@@ -9,6 +9,9 @@ use icicle_bls12_381::curve;
 use icicle_bls12_381::curve::ScalarCfg;
 use icicle_core::field::Field;
 use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
+use lambdaworks_math::elliptic_curve::{
+    short_weierstrass::curves::bls12_381::curve::BLS12381Curve, traits::IsEllipticCurve,
+};
 use crate::bikzg::BLS12381Curve;
 
 

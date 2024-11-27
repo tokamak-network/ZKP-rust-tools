@@ -1,5 +1,7 @@
 use crate::srs::StructuredReferenceString;
 use lambdaworks_math::field::element::FieldElement;
+use crate::bikzg::G1Point;
+use srs::G2Point;
 
 /// Verify an opening proof for a bivariate polynomial
 ///

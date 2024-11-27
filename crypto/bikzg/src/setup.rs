@@ -5,6 +5,7 @@ use lambdaworks_math::{
     },
     field::element::FieldElement,
 };
+use lambdaworks_math::elliptic_curve::traits::IsEllipticCurve;
 use rayon::prelude::*;
 use crate::srs::{StructuredReferenceString, G1Point, G2Point};
 

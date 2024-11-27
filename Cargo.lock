@@ -41,6 +41,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
+name = "bikzg"
+version = "0.0.0"
+dependencies = [
+ "criterion 0.5.1",
+ "icicle-bls12-377",
+ "icicle-bls12-381",
+ "icicle-core",
+ "icicle-cuda-runtime",
+ "lambdaworks-groth16",
+ "lambdaworks-math",
+ "ndarray",
+ "rand",
+ "rand_chacha",
+ "rayon",
+ "serde",
+ "sha2",
+ "sha3",
+ "zkp-rust-tools-math",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.69.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1540,7 +1561,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "zkp-rust-tools-batch-groth16"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "lambdaworks-groth16",
  "lambdaworks-math",
@@ -1550,29 +1571,6 @@ dependencies = [
  "rand_chacha",
  "serde",
  "serde_json",
- "zkp-rust-tools-math",
-]
-
-[[package]]
-name = "zkp-rust-tools-crypto"
-version = "0.1.0"
-dependencies = [
- "criterion 0.5.1",
- "iai-callgrind",
- "icicle-bls12-377",
- "icicle-bls12-381",
- "icicle-core",
- "icicle-cuda-runtime",
- "lambdaworks-groth16",
- "lambdaworks-math",
- "ndarray",
- "rand",
- "rand_chacha",
- "rayon",
- "serde",
- "sha2",
- "sha3",
- "zkp-rust-tools-math",
 ]
 
 [[package]]

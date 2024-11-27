@@ -2,6 +2,8 @@ use crate::srs::StructuredReferenceString;
 use crate::commit::{commit_bivariate, commit_univariate};
 use lambdaworks_math::field::element::FieldElement;
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+use crate::bikzg::G1Point;
+use srs::G2Point;
 
 /// Generate an opening proof for a bivariate polynomial
 ///

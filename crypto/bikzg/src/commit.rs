@@ -5,6 +5,8 @@ use lambdaworks_math::{
     field::element::FieldElement,
 };
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+use crate::bikzg::G1Point;
+use srs::G2Point;
 
 /// Generate a commitment for a bivariate polynomial
 ///
