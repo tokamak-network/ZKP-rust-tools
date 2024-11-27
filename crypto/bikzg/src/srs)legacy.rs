@@ -439,8 +439,8 @@ impl<const N: usize, F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, P
         let (q_xy, q_y) = poly_to_commit.ruffini_division(x,y);
 
         // commitment to q_y , I should change the SRS to be compatible with it 
-        let q_xy_commitment = self.commit_bivariate(&q_xy);
-        // let q_xy_commitment = self.icicle_commit_bivariate(&q_xy);
+        //let q_xy_commitment = self.commit_bivariate(&q_xy);
+        let q_xy_commitment = self.icicle_commit_bivariate(&q_xy);
 
         let q_y_commitment = self.commit_univariate(&q_y);
         
@@ -594,7 +594,7 @@ mod tests {
             ],
         });
 
-        let g1_points_2d_vec = g1_points_srs((512,512), (tau_toxic_waste.clone(),tetha_toxic_waste.clone()));
+        let g1_points_2d_vec = g1_points_srs((1024,1024), (tau_toxic_waste.clone(),tetha_toxic_waste.clone()));
 
         let powers_main_group: Vec<_> = g1_points_2d_vec.into_iter().flatten().collect::<Vec<_>>();
         // println!("powers_main_group: {:?}", powers_main_group);
@@ -612,7 +612,7 @@ mod tests {
 
         ];
         // println!("{}", &converted_g1_points.type_id());
-        StructuredReferenceString::new(512, 512, &powers_main_group, &powers_secondary_group, &converted_g1_points)
+        StructuredReferenceString::new(1024, 1024, &powers_main_group, &powers_secondary_group, &converted_g1_points)
     }
 
     #[test]
@@ -622,7 +622,7 @@ mod tests {
         let srs = create_srs();
         // let bytes = srs.as_bytes();
         let bikzg = KZG::new(srs);
-        let matrix = Array2::from_elem((512, 512), FrElement::from(1)); 
+        let matrix = Array2::from_elem((1024, 1024), FrElement::from(1)); 
         let bp = BivariatePolynomial::new(matrix);
 
         println!(
@@ -633,8 +633,8 @@ mod tests {
         );
         // let (qxy, qy) = bp.ruffini_division(&-FieldElement::<FrField>::one(),& -FieldElement::<FrField>::one());
         let start2 = Instant::now();
-        let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.commit_bivariate(&bp);
-        // let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.icicle_commit_bivariate(&bp);
+        //let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.commit_bivariate(&bp);
+        let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.icicle_commit_bivariate(&bp);
         println!(
             "time duration p_commitment: {} ms",
             start2
