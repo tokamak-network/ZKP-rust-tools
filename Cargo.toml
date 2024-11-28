@@ -1,10 +1,6 @@
 [workspace]
 
-members = [
-    "math", 
-    "prover/batch_groth16",
-    "crypto/bikzg"
-]
+members = ["math", "crypto","prover/batch_groth16"]
 exclude = ["ensure-no_std"]
 resolver = "2"
 
@@ -14,6 +10,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
+repository = "https://github.com/lambdaclass/lambdaworks"
 
 
 #[dependencies]
@@ -28,7 +25,8 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 iai-callgrind = "0.3.1"
-# zkp-rust-tools-crypto = { path = "./crypto", version = "0.1.0", default-features = false }
+zkp-rust-tools-crypto = { path = "./crypto", version = "0.1.0", default-features = false }
+zkp-rust-tools-math = { path = "./math", version = "0.1.0", default-features = false }
 
 # # [features]
 # # default = []

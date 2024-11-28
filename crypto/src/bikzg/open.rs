@@ -1,9 +1,10 @@
-use crate::srs::StructuredReferenceString;
-use crate::commit::{commit_bivariate, commit_univariate};
+use crate::bikzg::srs::StructuredReferenceString;
+use crate::bikzg::commit::{commit_bivariate, commit_univariate};
 use lambdaworks_math::field::element::FieldElement;
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+use lambdaworks_math::field::traits::IsField;
 use crate::bikzg::G1Point;
-use srs::G2Point;
+use bikzg::srs::G2Point;
 
 /// Generate an opening proof for a bivariate polynomial
 ///
@@ -24,7 +25,7 @@ pub fn open<F>(
     y: &FieldElement<F>,
     evaluation: &FieldElement<F>,
     bp: &BivariatePolynomial<FieldElement<F>>,
-) -> (G1Point, G1Point) {
+) -> (G1Point, G1Point) where F: IsField {
     // Subtract the evaluation value from the polynomial
     let shifted_poly = bp.sub_by_field_element(evaluation);
 

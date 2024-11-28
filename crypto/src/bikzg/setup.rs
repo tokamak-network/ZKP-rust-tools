@@ -1,13 +1,13 @@
 use lambdaworks_math::{
     elliptic_curve::short_weierstrass::curves::bls12_381::{
-        curve::{BLS12381Curve, BLS12381FieldElement},
+        curve::{BLS12381Curve},
         default_types::FrElement,
     },
-    field::element::FieldElement,
+    // field::element::FieldElement,
 };
 use lambdaworks_math::elliptic_curve::traits::IsEllipticCurve;
-use rayon::prelude::*;
-use crate::srs::{StructuredReferenceString, G1Point, G2Point};
+use crate::bikzg::srs::{StructuredReferenceString, G1Point, G2Point};
+use lambdaworks_math::unsigned_integer::element::U256;
 
 /// Generate a Vandermonde Matrix
 ///
@@ -81,8 +81,23 @@ pub fn create_srs(dim_x: usize, dim_y: usize) -> StructuredReferenceString<G1Poi
     use rand::Rng;
 
     let mut rng = rand::thread_rng();
-    let tau = FrElement::new(BLS12381FieldElement::from(rng.gen::<u64>()));
-    let theta = FrElement::new(BLS12381FieldElement::from(rng.gen::<u64>()));
+    let tau = FrElement::new(U256 {
+        limbs: [
+            rng.gen::<u64>(),
+            rng.gen::<u64>(),
+            rng.gen::<u64>(),
+            rng.gen::<u64>(),
+        ],
+    });
+
+    let theta = FrElement::new(U256 {
+        limbs: [
+            rng.gen::<u64>(),
+            rng.gen::<u64>(),
+            rng.gen::<u64>(),
+            rng.gen::<u64>(),
+        ],
+    });
 
     let g1_points = g1_points_srs((dim_x, dim_y), (tau.clone(), theta.clone()));
     let g1_flattened: Vec<_> = g1_points.into_iter().flatten().collect();

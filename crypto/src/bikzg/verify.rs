@@ -1,7 +1,11 @@
-use crate::srs::StructuredReferenceString;
-use lambdaworks_math::field::element::FieldElement;
+use lambdaworks_math::{
+    cyclic_group::IsGroup,
+    field::{element::FieldElement, traits::IsPrimeField}, 
+};
+
 use crate::bikzg::G1Point;
-use srs::G2Point;
+use crate::bikzg::srs::StructuredReferenceString;
+use lambdaworks_groth16::common::G2Point;
 
 /// Verify an opening proof for a bivariate polynomial
 ///
@@ -24,7 +28,7 @@ pub fn verify<F>(
     evaluation: &FieldElement<F>,
     p_commitment: &G1Point,
     proofs: &(G1Point, G1Point),
-) -> bool {
+) -> bool where F: IsPrimeField {
     // Extract the proofs
     let (q_xy_commitment, q_y_commitment) = proofs;
 

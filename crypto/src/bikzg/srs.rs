@@ -1,10 +1,11 @@
 use lambdaworks_math::{
     elliptic_curve::short_weierstrass::curves::bls12_381::{
-        curve::{BLS12381Curve, BLS12381TwistCurve},
+        curve::{BLS12381Curve},
     },
     cyclic_group::IsGroup,
 };
-use serde::{Serialize, Deserialize};
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::twist::BLS12381TwistCurve;
+// use serde::{Serialize, Deserialize};
 
 /// G1Point represents a point on the primary elliptic curve group.
 pub type G1Point = <BLS12381Curve as IsGroup>::Element;
@@ -15,7 +16,7 @@ pub type G2Point = <BLS12381TwistCurve as IsGroup>::Element;
 /// Structured Reference String (SRS)
 ///
 /// SRS contains precomputed elliptic curve points used in KZG commitment schemes.
-#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct StructuredReferenceString<G1Point, G2Point> {
     pub dimention_x: usize,
     pub dimention_y: usize,

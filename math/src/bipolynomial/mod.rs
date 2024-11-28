@@ -27,9 +27,6 @@ pub struct BivariatePolynomial<FE> {
 }
 
 
-
-
-
 impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
     /// Creates a new polynomial with the given coefficients
     /// Creates a new polynomial with the given coefficients in the form of an ndarray.

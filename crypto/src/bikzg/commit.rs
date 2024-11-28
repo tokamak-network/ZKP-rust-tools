@@ -1,11 +1,15 @@
-use crate::srs::StructuredReferenceString;
-use crate::utils::{flatten_bivariate_coefficients, multi_scalar_multiplication};
+use crate::bikzg::srs::StructuredReferenceString;
+use crate::bikzg::utils::{multi_scalar_multiplication};
+
 use lambdaworks_math::{
-    polynomial::Polynomial as UnivariatePolynomial,
-    field::element::FieldElement,
+    field::{element::FieldElement},
 };
-use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+
+use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
+
 use crate::bikzg::G1Point;
+use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+
 use srs::G2Point;
 
 /// Generate a commitment for a bivariate polynomial
@@ -16,12 +20,15 @@ use srs::G2Point;
 ///
 /// # Returns:
 /// - `G1Point`: The commitment to the polynomial.
-pub fn commit_bivariate<F>(
+pub fn commit_bivariate<F: lambdaworks_math::field::traits::IsField>(
     srs: &StructuredReferenceString<G1Point, G2Point>,
     bp: &BivariatePolynomial<FieldElement<F>>,
 ) -> G1Point {
     // Flatten coefficients of the bivariate polynomial
-    let coefficients = flatten_bivariate_coefficients(bp);
+    let coefficients = bp.flatten_out()
+        .iter()
+        .map(|coefficient| coefficient.representative())
+        .collect();
 
     // Perform Multi-Scalar Multiplication (MSM) using the flattened coefficients and SRS points
     multi_scalar_multiplication(&coefficients, &srs.powers_main_group)
@@ -35,7 +42,7 @@ pub fn commit_bivariate<F>(
 ///
 /// # Returns:
 /// - `G1Point`: The commitment to the polynomial.
-pub fn commit_univariate<F>(
+pub fn commit_univariate<F: lambdaworks_math::field::traits::IsField>(
     srs: &StructuredReferenceString<G1Point, G2Point>,
     poly: &UnivariatePolynomial<FieldElement<F>>,
 ) -> G1Point {
