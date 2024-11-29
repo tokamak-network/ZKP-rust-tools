@@ -1,57 +1,118 @@
-use crate::bikzg::srs::StructuredReferenceString;
-use crate::bikzg::utils::{multi_scalar_multiplication};
-
 use lambdaworks_math::{
-    field::{element::FieldElement},
+    elliptic_curve::{
+        traits::IsPairing,
+        short_weierstrass::{
+            curves::bls12_381::curve::BLS12381Curve,
+            point::ShortWeierstrassProjectivePoint,
+        },
+    },
+    field::{element::FieldElement, traits::IsPrimeField},
+    msm::pippenger::msm,
+    unsigned_integer::element::UnsignedInteger,
+    cyclic_group::IsGroup, 
 };
-
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
-
-use crate::bikzg::G1Point;
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+use super::traits::IsCommitmentScheme;
+use super::BivariateKateZaveruchaGoldberg;
 
-use srs::G2Point;
+impl<
+    const N: usize,
+    F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>,
+    P: IsPairing<G1Point = ShortWeierstrassProjectivePoint<BLS12381Curve>>,
+> IsCommitmentScheme<F> for BivariateKateZaveruchaGoldberg<F, P>
+{
+    type Commitment = P::G1Point;
 
-/// Generate a commitment for a bivariate polynomial
-///
-/// # Parameters:
-/// - `srs`: The Structured Reference String (SRS).
-/// - `bp`: The bivariate polynomial to commit to.
-///
-/// # Returns:
-/// - `G1Point`: The commitment to the polynomial.
-pub fn commit_bivariate<F: lambdaworks_math::field::traits::IsField>(
-    srs: &StructuredReferenceString<G1Point, G2Point>,
-    bp: &BivariatePolynomial<FieldElement<F>>,
-) -> G1Point {
-    // Flatten coefficients of the bivariate polynomial
-    let coefficients = bp.flatten_out()
-        .iter()
-        .map(|coefficient| coefficient.representative())
-        .collect();
+    fn commit_bivariate(&self, poly: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment {
+        let coefficients: Vec<_> = poly
+            .flatten_out()
+            .iter()
+            .map(|c| c.representative())
+            .collect();
 
-    // Perform Multi-Scalar Multiplication (MSM) using the flattened coefficients and SRS points
-    multi_scalar_multiplication(&coefficients, &srs.powers_main_group)
-}
+        let g1_points = self.srs.flatten_partitioned_g1_points(poly.x_degree, poly.y_degree);
 
-/// Generate a commitment for a univariate polynomial
-///
-/// # Parameters:
-/// - `srs`: The Structured Reference String (SRS).
-/// - `poly`: The univariate polynomial to commit to.
-///
-/// # Returns:
-/// - `G1Point`: The commitment to the polynomial.
-pub fn commit_univariate<F: lambdaworks_math::field::traits::IsField>(
-    srs: &StructuredReferenceString<G1Point, G2Point>,
-    poly: &UnivariatePolynomial<FieldElement<F>>,
-) -> G1Point {
-    // Extract coefficients of the univariate polynomial
-    let coefficients = poly.coefficients.iter().map(|c| c.representative()).collect();
+        msm(&coefficients, &g1_points)
+            .expect("MSM failed: Scalars and points must have the same length.")
+    }
 
-    // Use only the first column of the SRS for univariate commitment
-    let first_column_powers = srs.powers_main_group.iter().step_by(srs.dimention_x).collect();
+    fn commit_univariate(
+        &self,
+        poly: &UnivariatePolynomial<FieldElement<F>>,
+    ) -> Self::Commitment {
+        let coefficients_y: Vec<_> = poly
+            .coefficients
+            .iter()
+            .map(|c| c.representative())
+            .collect();
 
-    // Perform Multi-Scalar Multiplication (MSM)
-    multi_scalar_multiplication(&coefficients, &first_column_powers)
+        let first_col_powers_main_group: Vec<_> = self
+            .srs
+            .powers_main_group
+            .iter()
+            .step_by(self.srs.dimention_x)
+            .cloned()
+            .collect();
+
+        msm(
+            &coefficients_y,
+            &first_col_powers_main_group[..coefficients_y.len()],
+        )
+        .expect("MSM failed: Scalars and points must have the same length.")
+    }
+
+    fn open(
+        &self,
+        x: &FieldElement<F>,
+        y: &FieldElement<F>,
+        evaluation: &FieldElement<F>,
+        p: &BivariatePolynomial<FieldElement<F>>,
+    ) -> (Self::Commitment, Self::Commitment) {
+        let adjusted_poly = p.sub_by_field_element(evaluation);
+        let (q_xy, q_y) = adjusted_poly.ruffini_division(x, y);
+
+        let q_xy_commitment = self.commit_bivariate(&q_xy);
+        let q_y_commitment = self.commit_univariate(&q_y);
+
+        (q_xy_commitment, q_y_commitment)
+    }
+
+    fn verify(
+        &self,
+        x: &FieldElement<F>,
+        y: &FieldElement<F>,
+        evaluation: &FieldElement<F>,
+        p_commitment: &Self::Commitment,
+        proofs: &(Self::Commitment, Self::Commitment),
+    ) -> bool {
+        let g2 = &self.srs.powers_secondary_group[0];
+        let tau_g2 = &self.srs.powers_secondary_group[1];
+        let theta_g2 = &self.srs.powers_secondary_group[2];
+
+        let pairing_result = P::compute_batch(&[
+            (
+                &p_commitment.operate_with(
+                    &(&self.srs.powers_main_group[0]
+                        .operate_with_self(evaluation.representative()))
+                    .neg(),
+                ),
+                g2,
+            ),
+            (
+                &proofs.0.neg(),
+                &(tau_g2.operate_with(
+                    &(g2.operate_with_self(x.representative())).neg(),
+                )),
+            ),
+            (
+                &proofs.1.neg(),
+                &(theta_g2.operate_with(
+                    &(g2.operate_with_self(y.representative())).neg(),
+                )),
+            ),
+        ]);
+
+        pairing_result == Ok(FieldElement::one())
+    }
 }

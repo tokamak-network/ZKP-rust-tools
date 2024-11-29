@@ -1,40 +1,39 @@
-use crate::bikzg::srs::StructuredReferenceString;
-use crate::bikzg::commit::{commit_bivariate, commit_univariate};
-use lambdaworks_math::field::element::FieldElement;
+use lambdaworks_math::{
+    field::{element::FieldElement, traits::IsPrimeField},
+    elliptic_curve::traits::IsPairing,
+};
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
-use lambdaworks_math::field::traits::IsField;
-use crate::bikzg::G1Point;
-use bikzg::srs::G2Point;
+use super::traits::IsCommitmentScheme;
+use super::BivariateKateZaveruchaGoldberg;
+use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
+use lambdaworks_math::unsigned_integer::element::UnsignedInteger;
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::curve::BLS12381Curve;
 
-/// Generate an opening proof for a bivariate polynomial
-///
-/// # Parameters:
-/// - `srs`: The Structured Reference String (SRS).
-/// - `x`: The x-coordinate of the evaluation point.
-/// - `y`: The y-coordinate of the evaluation point.
-/// - `evaluation`: The value of the polynomial at `(x, y)`.
-/// - `bp`: The bivariate polynomial.
-///
-/// # Returns:
-/// - `(G1Point, G1Point)`: The opening proof as two commitments.
-///   - \( \pi_{xy} \): Commitment to \( q_{xy}(x, y) \).
-///   - \( \pi_y \): Commitment to \( q_y(y) \).
-pub fn open<F>(
-    srs: &StructuredReferenceString<G1Point, G2Point>,
-    x: &FieldElement<F>,
-    y: &FieldElement<F>,
-    evaluation: &FieldElement<F>,
-    bp: &BivariatePolynomial<FieldElement<F>>,
-) -> (G1Point, G1Point) where F: IsField {
-    // Subtract the evaluation value from the polynomial
-    let shifted_poly = bp.sub_by_field_element(evaluation);
+#[cfg(feature = "open")]
+impl<
+    const N: usize, 
+    F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, 
+    P: IsPairing<G1Point = ShortWeierstrassProjectivePoint<BLS12381Curve>>
+>
+    IsCommitmentScheme<F> for BivariateKateZaveruchaGoldberg<F, P>
+{
+    type Commitment = P::G1Point;
 
-    // Perform Ruffini division to compute q_{xy} and q_y
-    let (q_xy, q_y) = shifted_poly.ruffini_division(x, y);
+    fn open(
+        &self,
+        x: &FieldElement<F>,
+        y: &FieldElement<F>,
+        evaluation: &FieldElement<F>,
+        p: &BivariatePolynomial<FieldElement<F>>,
+    ) -> (Self::Commitment, Self::Commitment) {
+        // Compute q_xy(x, y) = (p(x, y) - evaluation) / ((x - X)(y - Y))
+        let adjusted_poly = p.sub_by_field_element(evaluation);
+        let (q_xy, q_y) = adjusted_poly.ruffini_division(x, y);
 
-    // Generate commitments for q_{xy} and q_y
-    let q_xy_commitment = commit_bivariate(srs, &q_xy);
-    let q_y_commitment = commit_univariate(srs, &q_y);
+        // Commit to q_xy and q_y
+        let q_xy_commitment = self.commit_bivariate(&q_xy);
+        let q_y_commitment = self.commit_univariate(&q_y);
 
-    (q_xy_commitment, q_y_commitment)
+        (q_xy_commitment, q_y_commitment)
+    }
 }

@@ -5,6 +5,7 @@ extern crate alloc;
 
 // #[cfg(feature = "alloc")]
 pub mod bikzg;
+pub use bikzg::srs::{G1Point, G2Point, StructuredReferenceString};
 // #[cfg(feature = "alloc")]
 pub mod lagrange_basis;
 // #[cfg(feature = "std")]

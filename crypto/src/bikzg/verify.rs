@@ -1,59 +1,56 @@
-use lambdaworks_math::{
-    cyclic_group::IsGroup,
-    field::{element::FieldElement, traits::IsPrimeField}, 
-};
+use lambdaworks_math::field::element::FieldElement;
+use crate::bikzg::srs::{StructuredReferenceString, G1Point, G2Point};
+use lambdaworks_math::elliptic_curve::traits;
+use crate::bikzg::verify::traits::IsPairing;
 
-use crate::bikzg::G1Point;
-use crate::bikzg::srs::StructuredReferenceString;
-use lambdaworks_groth16::common::G2Point;
+use lambdaworks_math::field::traits::IsPrimeField;
 
-/// Verify an opening proof for a bivariate polynomial
-///
-/// # Parameters:
-/// - `srs`: The Structured Reference String (SRS).
-/// - `x`: The x-coordinate of the evaluation point.
-/// - `y`: The y-coordinate of the evaluation point.
-/// - `evaluation`: The claimed value of the polynomial at `(x, y)`.
-/// - `p_commitment`: The commitment to the polynomial \( p(x, y) \).
-/// - `proofs`: The opening proofs \((\pi_{xy}, \pi_y)\):
-///   - \( \pi_{xy} \): Commitment to \( q_{xy}(x, y) \).
-///   - \( \pi_y \): Commitment to \( q_y(y) \).
-///
-/// # Returns:
-/// - `bool`: True if the proof is valid, false otherwise.
-pub fn verify<F>(
-    srs: &StructuredReferenceString<G1Point, G2Point>,
-    x: &FieldElement<F>,
-    y: &FieldElement<F>,
-    evaluation: &FieldElement<F>,
-    p_commitment: &G1Point,
-    proofs: &(G1Point, G1Point),
-) -> bool where F: IsPrimeField {
-    // Extract the proofs
-    let (q_xy_commitment, q_y_commitment) = proofs;
+use super::traits::IsCommitmentScheme;
+use super::BivariateKateZaveruchaGoldberg;
+use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
+use lambdaworks_math::unsigned_integer::element::UnsignedInteger;
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::curve::BLS12381Curve;
 
-    // Extract SRS components
-    let g1 = &srs.powers_main_group[0];
-    let g2 = &srs.powers_secondary_group[0];
-    let tau_g2 = &srs.powers_secondary_group[1];
-    let theta_g2 = &srs.powers_secondary_group[2];
+#[cfg(feature = "verify")]
+impl<
+    const N: usize, 
+    F: IsPrimeField<RepresentativeType = UnsignedInteger<N>>, 
+    P: IsPairing<G1Point = ShortWeierstrassProjectivePoint<BLS12381Curve>>
+>
+    IsCommitmentScheme<F> for BivariateKateZaveruchaGoldberg<F, P>
+{
+    type Commitment = P::G1Point;
+    fn verify(
+        &self,
+        x: &FieldElement<F>,
+        y: &FieldElement<F>,
+        evaluation: &FieldElement<F>,
+        p_commitment: &Self::Commitment,
+        proofs: &(Self::Commitment, Self::Commitment),
+    ) -> bool {
+         // Extract G2 points from the SRS
+        let g2 = &self.srs.powers_secondary_group[0];
+        let tau_g2 = &self.srs.powers_secondary_group[1];
+        let theta_g2 = &self.srs.powers_secondary_group[2];
 
-    // Compute pairings
-    let pairing_result = P::compute_batch(&[
-        (
-            &p_commitment.operate_with(&(g1.operate_with_self(evaluation.representative())).neg()),
-            g2,
-        ),
-        (
-            &q_xy_commitment.neg(),
-            &tau_g2.operate_with(&(g2.operate_with_self(x.representative())).neg()),
-        ),
-        (
-            &q_y_commitment.neg(),
-            &theta_g2.operate_with(&(g2.operate_with_self(y.representative())).neg()),
-        ),
-    ]);
+        // Compute the pairing result using P::compute_batch
+        let pairing_result = P::compute_batch(&[
+            (
+                &p_commitment.operate_with(&(&self.srs.powers_main_group[0].operate_with_self(evaluation.representative())).neg()),
+                g2,
+            ),
+            (
+                &proofs.0.neg(),
+                &(tau_g2.operate_with(&(g2.operate_with_self(x.representative())).neg())),
+            ),
+            (
+                &proofs.1.neg(),
+                &(theta_g2.operate_with(&(g2.operate_with_self(y.representative())).neg())),
+            ),
+        ]);
 
-    // Check if the pairing result equals the identity element
-    pairing_result == Ok(FieldElement::one())
+        // The pairing result should equal one in the target field
+        pairing_result == Ok(FieldElement::one())
+        
+    }
 }

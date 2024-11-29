@@ -20,8 +20,8 @@ pub trait IsCommitmentScheme<F: IsField> {
 
     fn commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
     fn commit_univariate(&self, bp: &UnivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
-    fn icicle_commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
-    fn icicle_msm(scalar: Vec<Field<8, ScalarCfg>>, points: &Vec<curve::G1Affine> ) -> ShortWeierstrassProjectivePoint<BLS12381Curve>;
+    // fn icicle_commit_bivariate(&self, bp: &BivariatePolynomial<FieldElement<F>>) -> Self::Commitment;
+    // fn icicle_msm(scalar: Vec<Field<8, ScalarCfg>>, points: &Vec<curve::G1Affine> ) -> ShortWeierstrassProjectivePoint<BLS12381Curve>;
 
     fn open(
         &self,
@@ -31,7 +31,6 @@ pub trait IsCommitmentScheme<F: IsField> {
         p: &BivariatePolynomial<FieldElement<F>>,
     ) -> (Self::Commitment,Self::Commitment);
 
-
     fn verify(
         &self,
         x: &FieldElement<F>,
@@ -40,8 +39,35 @@ pub trait IsCommitmentScheme<F: IsField> {
         p_commitment: &Self::Commitment,
         proofs: &(Self::Commitment,Self::Commitment),
     ) -> bool;
-
 }
+
+// #[cfg(feature = "open")]
+// pub trait IsCommitmentScheme<F: IsField> {
+//     type Commitment;
+
+//     fn open(
+//         &self,
+//         x: &FieldElement<F>,
+//         y: &FieldElement<F>,
+//         evaluation: &FieldElement<F>,//f(x,y)
+//         p: &BivariatePolynomial<FieldElement<F>>,
+//     ) -> (Self::Commitment,Self::Commitment);
+
+// }
+
+// #[cfg(feature = "verify")]
+// pub trait IsCommitmentScheme<F: IsField> {
+//     type Commitment;
+
+//     fn verify(
+//         &self,
+//         x: &FieldElement<F>,
+//         y: &FieldElement<F>,
+//         evaluation: &FieldElement<F>,
+//         p_commitment: &Self::Commitment,
+//         proofs: &(Self::Commitment,Self::Commitment),
+//     ) -> bool;
+// }
 
 pub trait PointConversion {
     fn to_icicle(&self) -> curve::G1Affine;

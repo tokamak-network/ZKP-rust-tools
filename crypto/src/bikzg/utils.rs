@@ -1,38 +1,43 @@
-use lambdaworks_math::{
-    // field::{element::FieldElement},
-    msm::pippenger::msm,
-};
-
-// use rayon::prelude::*;
+use icicle_bls12_381::curve;
+use icicle_core::{error::IcicleError, msm, traits::FieldImpl};
 use crate::bikzg::G1Point;
-// use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+use lambdaworks_math::traits::{AsBytes, Deserializable, ByteConversion};
+use lambdaworks_math::errors::{DeserializationError, ByteConversionError};
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::curve::BLS12381FieldElement;
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::curve::BLS12381Curve;
+use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
 
+use crate::bikzg::traits::{IsCommitmentScheme, PointConversion, ToIcicle};
+type BlsG1point = ShortWeierstrassProjectivePoint<BLS12381Curve>;
 
-use crate::bikzg::srs::{G1Point};
+impl PointConversion for BlsG1point {
+    fn to_icicle(&self) -> curve::G1Affine {
+        let s = self.to_affine();
+        let x = s.x().to_icicle();
+        let y = s.y().to_icicle();
+        curve::G1Affine { x, y }
+    }
 
-// /// Flatten the coefficients of a bivariate polynomial
-// ///
-// /// # Parameters:
-// /// - `bp`: The bivariate polynomial to flatten.
-// ///
-// /// # Returns:
-// /// - `Vec<F>`: A flattened vector of coefficients.
-// pub fn flatten_bivariate_coefficients<F: lambdaworks_math::field::traits::IsField>(bp: &BivariatePolynomial<FieldElement<F>>) -> Vec<F> {
-//     bp.flatten_out()
-//         .iter()
-//         .map(|coefficient| coefficient.representative())
-//         .collect()
-// }
+    fn from_icicle(icicle: &curve::G1Projective) -> Result<Self, ByteConversionError> {
+        Ok(Self::new([
+            ToIcicle::from_icicle(&icicle.x)?,
+            ToIcicle::from_icicle(&icicle.y)?,
+            ToIcicle::from_icicle(&icicle.z)?,
+        ]))
+    }
+}
 
-/// Perform Multi-Scalar Multiplication (MSM)
-///
-/// # Parameters:
-/// - `scalars`: The scalar values for multiplication.
-/// - `points`: The group elements to be multiplied.
-///
-/// # Returns:
-/// - `G1Point`: The resulting group element after MSM.
-pub fn multi_scalar_multiplication<F>(scalars: &[F], points: &[G1Point]) -> G1Point {
+impl ToIcicle for BLS12381FieldElement {
+    fn to_icicle_scalar(&self) -> curve::ScalarField {
+        let scalar_bytes = self.to_bytes_le();
+        curve::ScalarField::from_bytes_le(&scalar_bytes)
+    }
 
-    msm(scalars, points).expect("MSM failed: Scalars and points must have the same length.")
+    fn to_icicle(&self) -> curve::BaseField {
+        curve::BaseField::from_bytes_le(&self.to_bytes_le())
+    }
+
+    fn from_icicle(icicle: &curve::BaseField) -> Result<Self, ByteConversionError> {
+        Self::from_bytes_le(&icicle.to_bytes_le())
+    }
 }
