@@ -1,13 +1,12 @@
 use icicle_bls12_381::curve;
-use icicle_core::{error::IcicleError, msm, traits::FieldImpl};
-use crate::bikzg::G1Point;
-use lambdaworks_math::traits::{AsBytes, Deserializable, ByteConversion};
-use lambdaworks_math::errors::{DeserializationError, ByteConversionError};
+use icicle_core::traits::FieldImpl;
+use lambdaworks_math::traits::ByteConversion;
+use lambdaworks_math::errors::ByteConversionError;
 use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::curve::BLS12381FieldElement;
 use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::curve::BLS12381Curve;
 use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
 
-use crate::bikzg::traits::{IsCommitmentScheme, PointConversion, ToIcicle};
+use crate::bikzg::traits::{PointConversion, ToIcicle};
 type BlsG1point = ShortWeierstrassProjectivePoint<BLS12381Curve>;
 
 impl PointConversion for BlsG1point {

@@ -6,7 +6,7 @@ pub mod traits;
 pub mod utils;
 pub use srs::{StructuredReferenceString, G2Point};
 pub use traits::{IsCommitmentScheme, PointConversion, ToIcicle};
-use core::{marker::PhantomData, mem};
+use core::marker::PhantomData;
 
 // Re-export types from external libraries for convenience
 pub use lambdaworks_math::{

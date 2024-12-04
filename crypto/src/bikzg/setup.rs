@@ -1,21 +1,7 @@
-use lambdaworks_math::{
-    elliptic_curve::short_weierstrass::{
-        curves::bls12_381::{
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::{
             curve::BLS12381Curve,
             default_types::FrElement,
-            pairing::BLS12381AtePairing,
-            twist::BLS12381TwistCurve,
-        },
-    },
-    elliptic_curve::traits::IsEllipticCurve,
-    unsigned_integer::element::U256,
-};
-use crate::bikzg::G1Point;
-use rayon::prelude::*;
-use lambdaworks_math::cyclic_group::IsGroup;
-use lambdaworks_math::elliptic_curve::traits::IsPairing;
-use crate::bikzg::{srs::StructuredReferenceString, PointConversion};
-use crate::G2Point;
+        };
 use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
 // use lambdaworks_groth16::common::G2Point;
 type BlsG1point = ShortWeierstrassProjectivePoint<BLS12381Curve>;

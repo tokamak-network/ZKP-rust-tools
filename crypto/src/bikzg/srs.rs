@@ -8,7 +8,6 @@ use lambdaworks_math::{
         curve::BLS12381Curve, 
         twist::BLS12381TwistCurve,
     },
-    field::element::FieldElement,
     unsigned_integer::element::U256,
 };
 use lambdaworks_math::elliptic_curve::traits::IsEllipticCurve;
@@ -16,8 +15,6 @@ use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::defa
 // use lambdaworks_math::field::traits::IsField;
 use rayon::prelude::*;
 use rand::Rng;
-use icicle_bls12_381::curve::CurveCfg;
-use icicle_core::curve::Affine;
 use lambdaworks_math::cyclic_group::IsGroup;
 use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
 
