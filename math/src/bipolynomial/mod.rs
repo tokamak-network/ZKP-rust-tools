@@ -1,22 +1,124 @@
 use crate::alloc::borrow::ToOwned;
-use core::array;
-use core::ops::{Add, Sub};
-use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::default_types::FrElement;
-use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bn_254::pairing::X;
+use core::fmt::Debug;
+use core::ops::{Add, Sub, Mul};
 use lambdaworks_math::field::element::FieldElement;
 use lambdaworks_math::field::traits::{IsField, IsSubFieldOf};
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
-use ndarray::{s, Array, Array2, ArrayBase, Axis, Ix2};
+use ndarray::{s, Array, Array2, Axis};
+use core::fmt;
 
-/// Represents the polynomial (c_00 + c_01 * X + c_02 * X^2 + ... + c_0n * X^n) * Y^0 +
-///                           (c_10 + c_11 * X + c_12 * X^2 + ... + c_1n * X^n) * Y^1 + ... +
-///                           (c_n0 + c_n1 * X + c_n2 * X^2 + ... + c_nn * X^n) * Y^n
-/// as a vector of coefficients `[c_0, c_1, ... , c_n]`
+/// Represents the polynomial:
+///
+/// (c₀₀ + c₀₁ * X + c₀₂ * X² + ... + c₀ₙ * Xⁿ) * Y⁰ +
+/// (c₁₀ + c₁₁ * X + c₁₂ * X² + ... + c₁ₙ * Xⁿ) * Y¹ +
+/// ... +
+/// (cₙ₀ + cₙ₁ * X + cₙ₂ * X² + ... + cₙₙ * Xⁿ) * Yⁿ
+///
+/// This polynomial is represented as a vector of coefficients: `[c₀, c₁, ..., cₙ]`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BivariatePolynomial<FE> {
     pub coefficients: Array2<FE>,
     pub x_degree: usize,
     pub y_degree: usize,
+}
+
+
+
+
+impl<F: IsField> fmt::Display for BivariatePolynomial<FieldElement<F>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    
+
+        let mut true_x_degree = 0;
+        let mut true_y_degree = 0;
+
+        for y_power in 0..self.coefficients.nrows() {
+            for x_power in 0..self.coefficients.ncols() {
+                if self.coefficients[[y_power, x_power]] != FieldElement::zero() {
+                    true_x_degree = true_x_degree.max(x_power);
+                    true_y_degree = true_y_degree.max(y_power);
+                }
+            }
+        }
+
+        writeln!(f, "Degree in X: {}", true_x_degree)?;
+        writeln!(f, "Degree in Y: {}", true_y_degree)?;
+
+        if self.coefficients.is_empty() {
+            return write!(f, "Polynomial: 0");
+        }
+
+        write!(f, "Polynomial: ")?;
+        let mut first_term = true;
+
+        // Iterate over the actual polynomial terms
+        for y_power in 0..self.coefficients.nrows() {
+            for x_power in 0..self.coefficients.ncols() {
+                let coeff = &self.coefficients[[y_power, x_power]];
+
+                if *coeff == FieldElement::zero() {
+                    continue;
+                }
+
+                if !first_term {
+                    write!(f, " + ")?;
+                }
+
+                if *coeff != FieldElement::one() || (x_power == 0 && y_power == 0) {
+                    write!(f, "{:?}", coeff.value())?; // TODO ::check
+                    if x_power > 0 || y_power > 0 {
+                        write!(f, "*")?;
+                    }
+                }
+
+                if x_power > 0 {
+                    write!(f, "X")?;
+                    if x_power > 1 {
+                        write!(f, "^{}", x_power)?;
+                    }
+                    if y_power > 0 {
+                        write!(f, "*")?;
+                    }
+                }
+
+                if y_power > 0 {
+                    write!(f, "Y")?;
+                    if y_power > 1 {
+                        write!(f, "^{}", y_power)?;
+                    }
+                }
+
+                first_term = false;
+            }
+        }
+
+        if first_term {
+            write!(f, "0")?;
+        }
+
+        Ok(())
+    }
+}
+
+
+
+impl<F: IsField > BivariatePolynomial<FieldElement<F>> {
+
+    pub fn polynomial_dimension(&self) -> (usize, usize) {
+
+        let mut true_x_degree = 0;
+        let mut true_y_degree = 0;
+
+        for y_power in 0..self.coefficients.nrows() {
+            for x_power in 0..self.coefficients.ncols() {
+                if self.coefficients[[y_power, x_power]] != FieldElement::zero() {
+                    true_x_degree = true_x_degree.max(x_power);
+                    true_y_degree = true_y_degree.max(y_power);
+                }
+            }
+        }
+        (true_x_degree, true_y_degree)
+    }
 }
 
 
@@ -204,7 +306,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
 
 }   
 
-impl<F: IsField> Add for BivariatePolynomial<FieldElement<F>> {
+impl<F: IsField> Add<BivariatePolynomial<FieldElement<F>>> for BivariatePolynomial<FieldElement<F>> {
     type Output = BivariatePolynomial<FieldElement<F>>;
 
     fn add(
@@ -240,8 +342,78 @@ impl<F: IsField> Add for BivariatePolynomial<FieldElement<F>> {
     }
 }
 
+// Borrowed BivariatePolynomial plus Borrowed FieldElement
+impl<F, L> Add<&FieldElement<F>> for &BivariatePolynomial<FieldElement<L>>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn add(self, other: &FieldElement<F>) -> Self::Output {
+        let mut new_coefficients = self.coefficients.clone();
+
+        // Add the FieldElement to the constant term
+        if new_coefficients.nrows() > 0 && new_coefficients.ncols() > 0 {
+            new_coefficients[(0, 0)] =
+                new_coefficients[(0, 0)].clone() + other.clone().to_extension();
+        } else {
+            // If the polynomial has no constant term, initialize it with the FieldElement as the constant term
+            new_coefficients = Array2::from_elem((1, 1), other.clone().to_extension());
+        }
+
+        BivariatePolynomial {
+            coefficients: new_coefficients,
+            x_degree: self.x_degree,
+            y_degree: self.y_degree,
+        }
+    }
+}
+
 // Implementing the Add trait for references of BivariatePolynomial
-impl<F: IsField> Add for &BivariatePolynomial<FieldElement<F>> {
+impl<F: IsField> Add<BivariatePolynomial<FieldElement<F>>> for &BivariatePolynomial<FieldElement<F>> {
+    type Output = BivariatePolynomial<FieldElement<F>>;
+
+    fn add(
+        self,
+        other: BivariatePolynomial<FieldElement<F>>,
+    ) -> BivariatePolynomial<FieldElement<F>> {
+        let max_y_degree = self.y_degree.max(other.y_degree);
+        let max_x_degree = self.x_degree.max(other.x_degree);
+
+        // Create a new 2D array with the maximum dimensions
+        let mut new_coefficients = Array2::<FieldElement<F>>::default((max_y_degree, max_x_degree));
+
+        // Iterate over each coefficient and calculate the sum
+        for y in 0..max_y_degree {
+            for x in 0..max_x_degree {
+                let self_coeff = if y < self.y_degree && x < self.x_degree {
+                    self.coefficients[(y, x)].clone()
+                } else {
+                    FieldElement::zero()
+                };
+
+                let other_coeff = if y < other.y_degree && x < other.x_degree {
+                    other.coefficients[(y, x)].clone()
+                } else {
+                    FieldElement::zero()
+                };
+
+                new_coefficients[(y, x)] = self_coeff + other_coeff;
+            }
+        }
+
+        BivariatePolynomial {
+            coefficients: new_coefficients,
+            x_degree: max_x_degree,
+            y_degree: max_y_degree,
+        }
+    }
+}
+
+
+// Implementing the Add trait for references of BivariatePolynomial
+impl<F: IsField> Add<&BivariatePolynomial<FieldElement<F>>> for &BivariatePolynomial<FieldElement<F>> {
     type Output = BivariatePolynomial<FieldElement<F>>;
 
     fn add(
@@ -280,6 +452,9 @@ impl<F: IsField> Add for &BivariatePolynomial<FieldElement<F>> {
         }
     }
 }
+
+
+
 
 impl<F: IsField> Sub for BivariatePolynomial<FieldElement<F>> {
     type Output = BivariatePolynomial<FieldElement<F>>;
@@ -570,6 +745,90 @@ where
         poly
     }
 }
+
+
+// Borrowed FieldElement plus Owned BivariatePolynomial
+impl<F, L> Mul<BivariatePolynomial<FieldElement<L>>> for &FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn mul(self, poly: BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Add the scalar to the constant term of the polynomial
+        let mut output = poly.clone();
+        for i in 0..poly.coefficients.nrows(){
+            for j in 0..poly.coefficients.ncols(){
+                output.coefficients[(i,j)] = poly.coefficients[(i,j)].clone() * self.clone().to_extension();
+            }
+        }
+        output
+    }
+}
+
+// FieldElement Multiply Owned BivariatePolynomial
+impl<F, L> Mul<BivariatePolynomial<FieldElement<L>>> for FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn mul(self, poly: BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Add the scalar to the constant term of the polynomial
+        let mut output = poly.clone();
+        for i in 0..poly.coefficients.nrows(){
+            for j in 0..poly.coefficients.ncols(){
+                output.coefficients[(i,j)] = poly.coefficients[(i,j)].clone() * self.clone().to_extension();
+            }
+        }
+        output
+    }
+}
+
+// Owned FieldElement plus Borrowed BivariatePolynomial
+impl<F, L> Mul<&BivariatePolynomial<FieldElement<L>>> for FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn mul(self, poly: &BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Add the scalar to the constant term of the polynomial
+        let mut output = poly.clone();
+        for i in 0..poly.coefficients.nrows(){
+            for j in 0..poly.coefficients.ncols(){
+                output.coefficients[(i,j)] = poly.coefficients[(i,j)].clone() * self.clone().to_extension();
+            }
+        }
+        output
+    }
+}
+
+// Borrowed FieldElement plus Borrowed BivariatePolynomial
+impl<F, L> Mul<&BivariatePolynomial<FieldElement<L>>> for &FieldElement<F>
+where
+    L: IsField,
+    F: IsSubFieldOf<L>,
+{
+    type Output = BivariatePolynomial<FieldElement<L>>;
+
+    fn mul(self, poly: &BivariatePolynomial<FieldElement<L>>) -> Self::Output {
+        // Add the scalar to the constant term of the polynomial
+        let mut output = poly.clone();
+        for i in 0..poly.coefficients.nrows(){
+            for j in 0..poly.coefficients.ncols(){
+                output.coefficients[(i,j)] = poly.coefficients[(i,j)].clone() * self.clone().to_extension();
+            }
+        }
+        output
+    }
+}
+
+
+
 
 #[cfg(test)]
 mod tests {
@@ -1028,6 +1287,27 @@ mod tests {
     }
 
     #[test]
+    fn test_borrowed_polynomial_plus_borrowed_field_element_2d() {
+        let element = FE::new(5);
+
+        // Polynomial: 1 + 2x + 3y + 4xy (2D array)
+        let polynomial = BivariatePolynomial::new(array![
+            [FE::new(1), FE::new(2)], // 1 + 2x
+            [FE::new(3), FE::new(4)], // 3y + 4xy
+        ]);
+
+        // Expected result: (5 + 1) + 2x + 3y + 4xy = 6 + 2x + 3y + 4xy
+        let expected_coeffs = array![
+            [FE::new(6), FE::new(2)], // 6 + 2x
+            [FE::new(3), FE::new(4)], // 3y + 4xy
+        ];
+
+        let result = &element + &polynomial;
+
+        assert_eq!(result.coefficients, expected_coeffs);
+    }
+
+    #[test]
     fn test_borrowed_field_element_plus_empty_polynomial_2d() {
         let element = FE::new(5);
 
@@ -1212,4 +1492,80 @@ mod tests {
 
         assert_eq!(result.coefficients, expected_coeffs)
     }
+
+    #[test] 
+    fn test_multiply_poly_with_field_element() {
+        let element = FE::new(2);
+        // Polynomial: 1 + 2x + 3y + 4xy (2D array)
+        let polynomial = BivariatePolynomial::new(array![
+            [FE::new(1), FE::new(2)], // 1 + 2x
+            [FE::new(3), FE::new(4)], // 3y + 4xy
+        ]);
+
+        let m_polynomial = element * polynomial ; 
+        
+        let expected_poly = BivariatePolynomial::new(array![
+            [FE::new(2), FE::new(4)], // 1 + 2x
+            [FE::new(6), FE::new(8)], // 3y + 4xy
+        ]);
+        assert_eq!(m_polynomial, expected_poly)
+
+    }
+
+
+    #[test]
+    fn test_polynomial_display() {
+        use ndarray::array;
+
+        let coeffs = array![[FE::new(1), FE::new(2)], [FE::new(3), FE::new(0)]];
+        let poly = BivariatePolynomial::new(coeffs);
+
+        let expected_str = "Degree in X: 1\nDegree in Y: 1\nPolynomial: 1 + 2*X + 3*Y";
+        assert_eq!(poly.to_string(), expected_str);
+    }
+
+
+
+    #[test]
+    fn test_polynomial_display_degree_5() {
+
+
+        let coeffs = array![
+            [FE::new(1), FE::new(2), FE::new(0), FE::new(0), FE::new(0), FE::new(0)], // Constant, X, X^2, X^3, X^4, X^5
+            [FE::new(3), FE::new(0), FE::new(4), FE::new(0), FE::new(0), FE::new(0)], // Y, XY, X^2Y, X^3Y, X^4Y, X^5Y
+            [FE::new(0), FE::new(0), FE::new(5), FE::new(0), FE::new(0), FE::new(0)], // Y^2, XY^2, X^2Y^2, ...
+            [FE::new(0), FE::new(0), FE::new(0), FE::new(6), FE::new(0), FE::new(0)], // Y^3, XY^3, X^2Y^3, X^3Y^3
+            [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(7), FE::new(0)], // Y^4, ...
+            [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(8)]  // Y^5
+        ];
+
+        let poly = BivariatePolynomial::new(coeffs);
+
+        let expected_output = "Degree in X: 5\nDegree in Y: 5\nPolynomial: 1 + 2*X + 3*Y + 4*X^2*Y + 5*X^2*Y^2 + 6*X^3*Y^3 + 7*X^4*Y^4 + 8*X^5*Y^5";
+
+        assert_eq!(format!("{}", poly), expected_output);
+    }
+
+    #[test]
+    fn test_polynomial_dimension_in_tuple() {
+        let coeffs = array![
+            [FE::new(1), FE::new(2), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)], // Constant, X, X^2, X^3, X^4, X^5
+            [FE::new(3), FE::new(0), FE::new(4), FE::new(0), FE::new(0), FE::new(0), FE::new(0)], // Y, XY, X^2Y, X^3Y, X^4Y, X^5Y
+            [FE::new(0), FE::new(0), FE::new(5), FE::new(0), FE::new(0), FE::new(0), FE::new(0)], // Y^2, XY^2, X^2Y^2, ...
+            [FE::new(0), FE::new(0), FE::new(0), FE::new(6), FE::new(0), FE::new(0), FE::new(0)], // Y^3, XY^3, X^2Y^3, X^3Y^3
+            [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(7), FE::new(0), FE::new(0)], // Y^4, ...
+            [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(8), FE::new(0), FE::new(0)], // Y^5
+            [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)],  // Y^5
+            [FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0), FE::new(0)]  // Y^5
+
+
+        ];
+
+        let poly = BivariatePolynomial::new(coeffs);
+
+        assert_eq!(poly.polynomial_dimension(), (4, 5))
+    }
+
+
+
 }
