@@ -1751,3 +1751,18 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "zkp-rust-tools-ooo-snark"
+version = "0.1.0"
+dependencies = [
+ "lambdaworks-groth16",
+ "lambdaworks-math",
+ "lazy_static",
+ "ndarray",
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+ "zkp-rust-tools-math",
+]

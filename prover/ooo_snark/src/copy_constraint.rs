@@ -47,14 +47,23 @@ impl CopyConstraintProver {
         
         let b = calculate_b_permutation_poly(&self.a_0, &self.a_1);
         let one = BivariatePolynomial::new(Array2::<FrElement>::from_elem((self.l_d as usize, self.s_max as usize), FrElement::one()));
-        
+        #[cfg(debug_assertions)]
+        println!("one :: {}", one);
+
+        let bib_bib = BivariatePolynomial::interpolate_fft::<FrField>(&Array2::<FrElement>::from_elem((self.l_d as usize, self.s_max as usize), FrElement::one())).unwrap(); 
+        #[cfg(debug_assertions)]
+        println!("bib_bib :: {}", bib_bib);
+
 
         let zero_matrix = Array2::<FrElement>::from_elem((self.l_d as usize, self.s_max as usize), FrElement::zero());
         
         let mut y_monomial_matrix = zero_matrix.clone(); 
-        y_monomial_matrix[(1,0)] = FrElement::one() ;
+        y_monomial_matrix[(0,1)] = FrElement::one() ;
 
         let y_monomial = BivariatePolynomial::new(y_monomial_matrix);
+        #[cfg(debug_assertions)]
+        println!("{}", y_monomial);
+
 
         let mut z_monomial_matrix = zero_matrix.clone(); 
         z_monomial_matrix[(1,0)] = FrElement::one() ;
@@ -75,13 +84,14 @@ impl CopyConstraintProver {
         for i in  self.s_max as usize - 1  .. 0  {
             c[(0 ,i)] = c[(self.l_d as usize, i)].clone() * f.coefficients[(0,i)].clone() / g.coefficients[(0,i)].clone();
         }
-
-
         for i in 0..self.s_max as usize {
             for j in 1..self.l_d as usize {
                 c[(j,i)] = c[(j-1,i)].clone() * f.coefficients[(j,i)].clone() / g.coefficients[(j,i)].clone();
             }
         }
+
+
+
 
 
         let r = BivariatePolynomial::interpolate_fft::<FrField>(&c).unwrap(); 
@@ -146,17 +156,23 @@ impl CopyConstraintProver {
         for j in 0..self.s_max as usize {
             k_0_evaluation[(0, j)] = FrElement::one();
         }
+
+        let k_0 = BivariatePolynomial::interpolate_fft::<FrField>(&k_0_evaluation).unwrap(); 
+        let k_0_resize_evaluations = BivariatePolynomial::evaluate_fft::<FrField>(&k_0, 1, 1, Some(3*self.l_d as usize - 2  ), Some(2*self.s_max as usize -1 )).unwrap();
+
         // it is not necessary 
 
         // let k_0 = BivariatePolynomial::interpolate_fft::<FrField>(&k_0_evaluation);
         let h_minus_j = &h - &j ; 
         let h_minus_i_evaluation = BivariatePolynomial::evaluate_fft::<FrField>(&h_minus_j, 1, 1, Some(3*self.l_d as usize - 2  ), Some(2*self.s_max as usize -1 )).unwrap();
         
-        let p3_evaluation = h_minus_i_evaluation * k_0_evaluation;
+        let p3_evaluation = h_minus_i_evaluation * k_0_resize_evaluations;
         let p_3 = BivariatePolynomial::interpolate_fft::<FrField>(&p3_evaluation).unwrap(); 
 
 
         let p = k.pow(3 as usize) * p_3 + k.pow(2 as usize) * p_2 + k * p_1 ;
+
+        assert_eq!(p.polynomial_dimension() , (2 * self.s_max as usize - 2 , 3 * self.l_d as usize - 3));
 
         // part 6 
         let zeta: FieldElement<FrField> = FieldElement::from(3);
@@ -179,22 +195,44 @@ impl CopyConstraintProver {
      
         r_roots_of_unity_evals = r_roots_of_unity_evals.map_mut(|elem| elem.clone() * &divisor_inv_zeta);
 
-        let pi_y_poly = BivariatePolynomial::interpolate_offset_fft::<FrField>(&r_roots_of_unity_evals, &FrElement::one(), &zeta).unwrap();
+        let pi_z_poly = BivariatePolynomial::interpolate_offset_fft::<FrField>(&r_roots_of_unity_evals, &FrElement::one(), &zeta).unwrap();
 
-        let pi_y_coefficients_negated = pi_y_poly.coefficients.mapv(|elem| -elem);
+        assert_eq!(pi_z_poly.polynomial_dimension() , (self.s_max as usize - 1 , 2* self.l_d as usize - 3));
 
+        let pi_z_coefficients_negated = pi_z_poly.coefficients.mapv(|elem| -elem);
+        let pi_z_negated = BivariatePolynomial::new(pi_z_coefficients_negated);
         
         // this concatination should be revised
-        let remainder_poly_coefficients = concatenate(Axis(0), &[pi_y_coefficients_negated.view(), pi_y_poly.coefficients.view()]).unwrap();
-       
-        let remainder_poly = BivariatePolynomial::new(remainder_poly_coefficients);
+        let zero_l_d_minus_one_matrix = Array2::<FrElement>::from_elem((self.l_d as usize - 1, self.s_max as usize), FrElement::zero());
 
+        //p_y should be replaced with p_z
+        let p_z_times_t_z_coefficients = concatenate(Axis(0), &[zero_l_d_minus_one_matrix.view(), pi_z_poly.coefficients.view()]).unwrap();
+        let p_z_times_t_z = BivariatePolynomial::new(p_z_times_t_z_coefficients);
+
+
+        // let remainder_poly_coefficients = 
+
+
+        let remainder_poly = pi_z_negated + p_z_times_t_z;
         
 
-        
+        // let h_minus_i_evaluation = BivariatePolynomial::evaluate_fft::<FrField>(&h_minus_i, 1, 1, Some(3*self.l_d as usize - 2  ), Some(2*self.s_max as usize -1 )).unwrap();
 
+        let remainder_poly_coset_y_evaluations = BivariatePolynomial::evaluate_offset_fft::<FrField>(&remainder_poly, 1, 1, Some(3*self.l_d as usize - 2  ), Some(2*self.s_max as usize -1 ), &gamma, &FieldElement::one()).unwrap();
 
-        todo!()    
+        // let p_left_roots_of_unity_evals = BivariatePolynomial::evaluate_offset_fft::<FrField>(&BivariatePolynomial::new(p_left_coefficients.to_owned()), 1, 1, Some(3*self.l_d as usize - 2  ), Some(self.s_max as usize  ), &FieldElement::one(), &zeta).unwrap();
+
+        let p_coset_y_evaluations = BivariatePolynomial::evaluate_offset_fft::<FrField>(&p, 1, 1, Some(3*self.l_d as usize - 2  ), Some(self.s_max as usize  ), &gamma, &FieldElement::one()).unwrap();
+
+        let mut q_coset_y_evaluation = remainder_poly_coset_y_evaluations - p_coset_y_evaluations; 
+        let divisor_inv_gamma = (gamma.pow(self.l_d - 1) - FrElement::one()).inv().unwrap(); 
+
+        q_coset_y_evaluation = q_coset_y_evaluation.map_mut(|elem| elem.clone() * &divisor_inv_gamma);
+
+        let pi_y_poly= BivariatePolynomial::interpolate_offset_fft::<FrField>(&q_coset_y_evaluation, &gamma, &FrElement::one()).unwrap();
+
+        // todo!()     
+        (pi_y_poly, pi_z_poly) 
     }
 }
 
@@ -228,10 +266,10 @@ pub fn calculate_b_permutation_poly(a_0: &Array2<u32>, a_1: &Array2<u32>) -> Biv
     for i in 0..a_0.nrows() {
         for j in 0..a_0.ncols() {
             // Your code here
-            if w[(a_0[(i,j)] as usize ,a_1[(i,j)] as usize)] == FrElement::zero() {
-                w[(a_0[(i,j)] as usize ,a_1[(i,j)] as usize)]  = random_fr();
+            if w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)] == FrElement::zero() {
+                w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)]  = random_fr();
             } else {
-                w[(i,j)] = w[(a_0[(i,j)] as usize ,a_1[(i,j)] as usize)].clone();
+                w[(i,j)] = w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)].clone();
             }
         }
     }
@@ -267,10 +305,52 @@ pub fn random_fr() -> FrElement {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
 
 
     #[test]
     fn test_x(){
+        let prover = CopyConstraintProver::new(8, 4, 0);
+        let (pi_y, pi_z) = prover.prove();
+    }
 
+    // I need to write a test to check the permutation B is correct or not , for that I should write 
+    // all the functionality together because current implementation is not compatible with it 
+    #[test]
+    fn test_b_permutaion_calculation(){
+        let l_d = 4; 
+        let s_max = 8 ; 
+        let (a_0,s_0_evals) = random_permutation(l_d,s_max,s_max);
+        let (a_1, s1_evals) =  random_permutation(l_d,s_max,l_d);
+    
+
+        let s_0 =  BivariatePolynomial::interpolate_fft::<FrField>(&s_0_evals).unwrap();
+        let s_1 = BivariatePolynomial::interpolate_fft::<FrField>(&s1_evals).unwrap();
+
+        let b = calculate_b_permutation_poly(&a_0,&a_1);
+
+
+        let w_z = FrField::get_primitive_root_of_unity(l_d as u64 ).unwrap();
+        let w_y = FrField::get_primitive_root_of_unity(s_max as u64).unwrap();
+
+
+        for i in 0..s_max {
+            for j in 0..l_d {
+                let c = b.evaluate(&w_y.pow(i), &w_z.pow(j));
+                let p_i_j_1 = s_0.evaluate(&w_y.pow(i), &w_z.pow(j));
+                let p_i_j_2 = s_1.evaluate(&w_y.pow(i), &w_z.pow(j));
+
+                let c_expected = b.evaluate(&p_i_j_1, &p_i_j_2); 
+
+                #[cfg(debug_assertions)]
+                println!("bib_bib :: {:?}", c.value());
+                #[cfg(debug_assertions)]
+                println!("bib_bib :: {:?}", c_expected.value());
+                assert_eq!(c , c_expected);
+
+            }
+        }
+        
     }
 }   
