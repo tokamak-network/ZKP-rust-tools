@@ -81,17 +81,17 @@ impl CopyConstraintProver {
         let mut c = zero_matrix.clone(); 
         c[(self.l_d as usize - 1 , self.s_max as usize - 1 )] = FrElement::one(); 
 
-        for i in  self.s_max as usize - 1  .. 0  {
-            c[(0 ,i)] = c[(self.l_d as usize, i)].clone() * f.coefficients[(0,i)].clone() / g.coefficients[(0,i)].clone();
-        }
         for i in 0..self.s_max as usize {
+            c[(0, i)] = if i > 0 {
+                c[(self.l_d as usize - 1 , i - 1)].clone()
+            } else {
+                c[(self.l_d as usize - 1 , self.s_max as usize - 1)].clone()
+            };
+
             for j in 1..self.l_d as usize {
-                c[(j,i)] = c[(j-1,i)].clone() * f.coefficients[(j,i)].clone() / g.coefficients[(j,i)].clone();
+                c[(j, i)] = c[(j - 1, i)].clone() * f.coefficients[(j, i)].clone() / g.coefficients[(j, i)].clone();
             }
         }
-
-
-
 
 
         let r = BivariatePolynomial::interpolate_fft::<FrField>(&c).unwrap(); 
@@ -352,5 +352,18 @@ mod tests {
             }
         }
         
+    }
+
+    #[test]
+    fn test_one_ifft_is_one(){
+        // let one = BivariatePolynomial::new(Array2::<FrElement>::from_elem((5, 7), FrElement::one()));
+        // #[cfg(debug_assertions)]
+        // println!("one :: {}", one);
+
+        let bib_bib = BivariatePolynomial::interpolate_fft::<FrField>(&Array2::<FrElement>::from_elem((4,8), FrElement::one())).unwrap(); 
+        #[cfg(debug_assertions)]
+        println!("bib_bib :: {}", bib_bib);
+
+        assert_eq!(bib_bib.coefficients.get((0,0)).unwrap(), &FrElement::one());
     }
 }   
