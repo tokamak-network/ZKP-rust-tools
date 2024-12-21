@@ -1,12 +1,16 @@
-﻿use lambdaworks_math::{
-    field::{element::FieldElement, traits::{IsFFTField, IsField}},
+﻿use std::{collections::HashMap, usize};
+
+use lambdaworks_math::{
+    field::{element::FieldElement, traits::{IsFFTField, RootsConfig}},
     unsigned_integer::element::{U256, U64},
+    fft::cpu::roots_of_unity::get_powers_of_primitive_root,
 
 };
 use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
 use ndarray::{Array2, concatenate, Axis};
 use lambdaworks_groth16::{common::{FrElement,FrField}, r1cs::{self, ConstraintSystem, R1CS}};
 use rand::Rng;
+
 
 
 // as it is demonstration, we need to think about what should be the input of this struct, 
@@ -262,15 +266,41 @@ pub fn random_permutation(row: u32, col: u32, upper_bound: u32) ->(Array2<u32> ,
 // in this function I create W first and after that calculate IFFT to get B Bipoly.
 pub fn calculate_b_permutation_poly(a_0: &Array2<u32>, a_1: &Array2<u32>) -> BivariatePolynomial<FrElement> {
     let mut w = Array2::<FrElement>::from_elem((a_0.nrows() as usize, a_0.ncols() as usize), FrElement::zero());
+    #[cfg(debug_assertions)]
+    println!("a_1 :: \n{:?}", a_1);
+    #[cfg(debug_assertions)]
+    println!("a_0 :: \n{:?}", a_0); 
+
+    let mut map: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
 
     for i in 0..a_0.nrows() {
         for j in 0..a_0.ncols() {
-            // Your code here
-            if w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)] == FrElement::zero() {
-                w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)]  = random_fr();
-            } else {
+
+            if w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)] == FrElement::zero() && w[(i,j)] == FrElement::zero()  {
+                let r = random_fr();
+                w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)]  = r.clone();
+                w[(i,j)] = r.clone();
+
+                map.insert(r.to_hex(), vec!((i,j), (a_1[(i,j)] as usize ,a_0[(i,j)] as usize)));
+
+            } else if w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)] == FrElement::zero() &&  w[(i,j)] != FrElement::zero() {
+                w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)] = w[(i,j)].clone();
+                // if map.contains_key(&w[(i,j)].clone().to_hex()){
+                let mut permutation_vec = map.get(&w[(i,j)].clone().to_hex()).unwrap().clone();
+                permutation_vec.push(((a_1[(i,j)] as usize ,a_0[(i,j)] as usize)));
+                map.insert(w[(i,j)].clone().to_hex(), permutation_vec);
+                // }
+            } else if w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)] != FrElement::zero() &&  w[(i,j)] == FrElement::zero() {
                 w[(i,j)] = w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)].clone();
+            } else {
+            
+                #[cfg(debug_assertions)]
+                println!("ij :: {:?}", (i,j));
+                #[cfg(debug_assertions)]
+                println!("p(ij) :: {:?}", (a_1[(i,j)] as usize ,a_0[(i,j)] as usize));
+                assert_eq!(w[(a_1[(i,j)] as usize ,a_0[(i,j)] as usize)].clone(),w[(i,j)].clone());
             }
+
         }
     }
 
@@ -300,7 +330,101 @@ pub fn random_fr() -> FrElement {
 
 
 
-// pub fn random_wire_bipoly()
+pub fn create_random_permutation(s_max :usize , l_d :usize) -> (
+    BivariatePolynomial<FrElement>,BivariatePolynomial<FrElement>,BivariatePolynomial<FrElement>,
+) {   
+
+    let mut list: Vec<(Vec<(usize, usize)>)> = Vec::new(); // Corrected type
+    // i -> 0..s_max , j -> 0..l_d 
+    let mut rng = rand::thread_rng();
+    let wires_connected = rng.gen_range(2..s_max);
+
+    for _ in 0..wires_connected {
+        let random_index = rng.gen_range(1..l_d);
+        let mut shared_wire: Vec<(usize,usize)> = Vec::new();
+    
+        for _ in 0..random_index{
+        let mut unique_pair = false;
+            let mut pair = (0, 0);
+
+            while !unique_pair {
+                pair = (rng.gen_range(0..s_max), rng.gen_range(0..l_d));
+                unique_pair = !list.iter().any(|(vec)| vec.contains(&pair)) && !shared_wire.contains(&pair);
+                
+            }
+            
+            shared_wire.push(pair);
+        }
+        list.push(shared_wire);
+    }   
+
+    #[cfg(debug_assertions)]
+    println!("list :: {:?}",list);
+
+    let mut s_0_evals = Array2::<FrElement>::from_elem((s_max as usize, l_d as usize), FrElement::one());
+    let mut a_0 = Array2::<u32>::from_elem((s_max as usize, l_d as usize), 0);
+   
+    let mut s_1_evals = Array2::<FrElement>::from_elem((s_max as usize, l_d as usize), FrElement::one());
+    let mut a_1 = Array2::<u32>::from_elem((s_max as usize, l_d as usize), 0);
+
+    let mut w  = Array2::<FrElement>::from_elem((s_max as usize, l_d as usize), FrElement::zero());
+    
+    let log2_l_d = (l_d as f64).log2() as usize;
+    let log2_s_max = (s_max as f64).log2() as usize;
+
+
+    // let w_z = FrField::get_primitive_root_of_unity(l_d.trailing_zeros() as u64 ).unwrap();
+    // let w_y = FrField::get_primitive_root_of_unity(s_max.trailing_zeros() as u64).unwrap();
+    let w_z = get_powers_of_primitive_root::<FrField>(l_d.trailing_zeros().into(), 1, RootsConfig::Natural).unwrap().get(0).unwrap().clone();
+    let w_y = get_powers_of_primitive_root::<FrField>(s_max.trailing_zeros().into(), 1, RootsConfig::Natural).unwrap().get(0).unwrap().clone();
+
+
+    // let dd = get_powers_of_primitive_root::<FrField>(l_d.trailing_zeros().into(), 1, RootsConfig::Natural).unwrap();
+    // assert_eq!(dd[0],w_z);
+
+
+    for connected_wires in list {   
+        let wire_value = random_fr();
+
+        for (i, wire_index) in connected_wires.iter().enumerate() {
+            w[(wire_index.0, wire_index.1)] = wire_value.clone();
+         
+
+            
+            a_0[(wire_index.0 , wire_index.1)] = connected_wires[(i + 1) % connected_wires.len()].0 as u32;
+            a_1[(wire_index.0 , wire_index.1)] = connected_wires[(i + 1) % connected_wires.len()].1 as u32;
+
+            s_0_evals[(wire_index.0 , wire_index.1)] = w_y.pow(a_0[(wire_index.0 , wire_index.1)]);
+            s_1_evals[(wire_index.0 , wire_index.1)] = w_z.pow(a_1[(wire_index.0 , wire_index.1)]);
+        }   
+    }
+    #[cfg(debug_assertions)]
+    println!("a_0 :: \n{:?}",a_0);
+    #[cfg(debug_assertions)]
+    println!("a_1 :: \n{:?}",a_1);
+
+
+    let s_0 =  BivariatePolynomial::interpolate_fft::<FrField>(&s_0_evals).unwrap();
+    let s_1 =  BivariatePolynomial::interpolate_fft::<FrField>(&s_1_evals).unwrap();
+
+
+
+    let b =  BivariatePolynomial::interpolate_fft::<FrField>(&w).unwrap();
+
+    for i in 0..s_max {
+        for j in 0..l_d {
+            let c = b.evaluate(&w_y.pow(i), &w_z.pow(j));
+
+            assert_eq!(c , w[(i,j)]);
+
+        }
+    }
+
+
+    (b,s_0,s_1)
+
+
+}
 
 
 #[cfg(test)]
@@ -321,32 +445,37 @@ mod tests {
     fn test_b_permutaion_calculation(){
         let l_d = 4; 
         let s_max = 8 ; 
-        let (a_0,s_0_evals) = random_permutation(l_d,s_max,s_max);
-        let (a_1, s1_evals) =  random_permutation(l_d,s_max,l_d);
+        // let (a_0,s_0_evals) = random_permutation(l_d,s_max,s_max);
+        // let (a_1, s1_evals) =  random_permutation(l_d,s_max,l_d);
     
 
-        let s_0 =  BivariatePolynomial::interpolate_fft::<FrField>(&s_0_evals).unwrap();
-        let s_1 = BivariatePolynomial::interpolate_fft::<FrField>(&s1_evals).unwrap();
+        // let s_0 =  BivariatePolynomial::interpolate_fft::<FrField>(&s_0_evals).unwrap();
+        // let s_1 = BivariatePolynomial::interpolate_fft::<FrField>(&s1_evals).unwrap();
 
-        let b = calculate_b_permutation_poly(&a_0,&a_1);
+        // let b = calculate_b_permutation_poly(&a_0,&a_1);
 
+        let (b,s_0, s_1) = create_random_permutation(s_max, l_d);
 
-        let w_z = FrField::get_primitive_root_of_unity(l_d as u64 ).unwrap();
-        let w_y = FrField::get_primitive_root_of_unity(s_max as u64).unwrap();
-
+        let log2_l_d = (l_d as f64).log2() as usize;
+        let log2_s_max = (s_max as f64).log2() as usize;
+    
+    
+        let w_z = FrField::get_primitive_root_of_unity(log2_l_d as u64 ).unwrap();
+        let w_y = FrField::get_primitive_root_of_unity(log2_s_max as u64).unwrap();
+    
 
         for i in 0..s_max {
             for j in 0..l_d {
                 let c = b.evaluate(&w_y.pow(i), &w_z.pow(j));
-                let p_i_j_1 = s_0.evaluate(&w_y.pow(i), &w_z.pow(j));
-                let p_i_j_2 = s_1.evaluate(&w_y.pow(i), &w_z.pow(j));
+                let p_i_j_0 = s_0.evaluate(&w_y.pow(i), &w_z.pow(j));
+                let p_i_j_1 = s_1.evaluate(&w_y.pow(i), &w_z.pow(j));
 
-                let c_expected = b.evaluate(&p_i_j_1, &p_i_j_2); 
+                let c_expected = b.evaluate(&p_i_j_0, &p_i_j_1); 
 
                 #[cfg(debug_assertions)]
-                println!("bib_bib :: {:?}", c.value());
+                println!("{},{} c_or :: ,  {:?}",i,j ,c.value());
                 #[cfg(debug_assertions)]
-                println!("bib_bib :: {:?}", c_expected.value());
+                println!("{},{} c_or :: ,  {:?}",i,j, c_expected.value());
                 assert_eq!(c , c_expected);
 
             }
@@ -365,5 +494,11 @@ mod tests {
         println!("bib_bib :: {}", bib_bib);
 
         assert_eq!(bib_bib.coefficients.get((0,0)).unwrap(), &FrElement::one());
+    }
+
+
+    #[test]
+    fn test_permutation(){
+        create_random_permutation(8,4);
     }
 }   
