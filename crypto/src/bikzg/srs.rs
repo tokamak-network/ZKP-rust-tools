@@ -31,8 +31,9 @@ pub struct StructuredReferenceString<G1Point, G2Point> {
     pub powers_main_group: Vec<G1Point>,
     pub powers_secondary_group: [G2Point; 3],// 1 , tau, theta 
 }
-
-
+// X,Y 
+// powers of tau , delta    , [P(tau,delta)]_1 
+ 
 impl<G1Point, G2Point> StructuredReferenceString<G1Point, G2Point>
 where
     G1Point: IsGroup,
