@@ -1,9 +1,7 @@
 ﻿use std::{collections::HashMap, usize};
 
 use lambdaworks_math::{
-    field::{element::FieldElement, traits::{IsFFTField, RootsConfig}},
-    unsigned_integer::element::{U256, U64},
-    fft::cpu::roots_of_unity::get_powers_of_primitive_root,
+    elliptic_curve::short_weierstrass::curves::bls12_381::default_types::FrConfig, fft::cpu::roots_of_unity::get_powers_of_primitive_root, field::{element::FieldElement, traits::{IsFFTField, RootsConfig}}, unsigned_integer::element::{U256, U64}
 
 };
 use rand_chacha::rand_core::le;
@@ -71,6 +69,8 @@ impl CopyConstraintProver {
         // let f = &self.b + &tetha_0 * &self.s_0 + &tetha_1* &self.s_1 + &tetha_2 * &one;
         // let g = &self.b + &tetha_0 * &y_monomial + &tetha_1 * &z_monomial + &tetha_2 * &one;
 
+        
+
         let f = &self.b + &tetha_0 * &self.s_0   + &tetha_1 * &self.s_1   + &tetha_2 * &one_x_0_y_0_poly;
         let g = &self.b + &tetha_0 * &y_monomial + &tetha_1 * &z_monomial + &tetha_2 * &one_x_0_y_0_poly; 
         
@@ -89,6 +89,22 @@ impl CopyConstraintProver {
                 g_multiplication = g_multiplication * g.evaluate(&w_y.pow(i), &w_z.pow(j));
             }   
         }
+
+        let mut s_0_multiplication = FrElement::one();
+        let mut w_y_multiplication = FrElement::one();
+
+        for i in 0..self.s_max as usize {
+            for j in 0..self.l_d as usize {
+                s_0_multiplication = s_0_multiplication * self.s_0.evaluate(&w_y.pow(i), &w_z.pow(j));
+                w_y_multiplication = w_y_multiplication * w_y.pow(j);
+            }   
+        }
+
+        assert_eq!(s_0_multiplication, w_y_multiplication);
+
+
+
+
 
         assert_eq!(f_multiplication, g_multiplication);
 
