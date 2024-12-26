@@ -96,7 +96,7 @@ impl CopyConstraintProver {
         for i in 0..self.s_max as usize {
             for j in 0..self.l_d as usize {
                 s_0_multiplication = s_0_multiplication * self.s_0.evaluate(&w_y.pow(i), &w_z.pow(j));
-                w_y_multiplication = w_y_multiplication * w_y.pow(j);
+                w_y_multiplication = w_y_multiplication * w_y.pow(i);
             }   
         }
 
