@@ -545,8 +545,19 @@ source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v2.7.0#31083463be69
 dependencies = [
  "cmake",
  "criterion 0.3.6",
- "icicle-core",
+ "icicle-core 2.7.0",
  "icicle-cuda-runtime",
+]
+
+[[package]]
+name = "icicle-bls12-377"
+version = "3.3.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+dependencies = [
+ "cmake",
+ "icicle-core 3.3.0",
+ "icicle-hash",
+ "icicle-runtime",
 ]
 
 [[package]]
@@ -556,8 +567,19 @@ source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v2.7.0#31083463be69
 dependencies = [
  "cmake",
  "criterion 0.3.6",
- "icicle-core",
+ "icicle-core 2.7.0",
  "icicle-cuda-runtime",
+]
+
+[[package]]
+name = "icicle-bls12-381"
+version = "3.3.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+dependencies = [
+ "cmake",
+ "icicle-core 3.3.0",
+ "icicle-hash",
+ "icicle-runtime",
 ]
 
 [[package]]
@@ -572,12 +594,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "icicle-core"
+version = "3.3.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+dependencies = [
+ "hex",
+ "icicle-runtime",
+ "once_cell",
+ "rand",
+ "rayon",
+]
+
+[[package]]
 name = "icicle-cuda-runtime"
 version = "2.7.0"
 source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v2.7.0#31083463be6904c7e83d5cbee447848f6d8a673a"
 dependencies = [
  "bindgen",
  "bitflags 1.3.2",
+]
+
+[[package]]
+name = "icicle-hash"
+version = "3.3.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+dependencies = [
+ "cmake",
+ "icicle-core 3.3.0",
+ "icicle-runtime",
+ "rand",
+]
+
+[[package]]
+name = "icicle-runtime"
+version = "3.3.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+dependencies = [
+ "cmake",
+ "once_cell",
 ]
 
 [[package]]
@@ -1559,9 +1613,9 @@ version = "0.1.0"
 dependencies = [
  "criterion 0.5.1",
  "iai-callgrind",
- "icicle-bls12-377",
- "icicle-bls12-381",
- "icicle-core",
+ "icicle-bls12-377 2.7.0",
+ "icicle-bls12-381 2.7.0",
+ "icicle-core 2.7.0",
  "icicle-cuda-runtime",
  "lambdaworks-groth16",
  "lambdaworks-math",
@@ -1582,6 +1636,10 @@ dependencies = [
  "const-random",
  "criterion 0.5.1",
  "iai-callgrind",
+ "icicle-bls12-377 3.3.0",
+ "icicle-bls12-381 3.3.0",
+ "icicle-core 3.3.0",
+ "icicle-runtime",
  "lambdaworks-groth16",
  "lambdaworks-math",
  "ndarray",

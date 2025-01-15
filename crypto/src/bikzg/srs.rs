@@ -55,8 +55,6 @@ where
         let mut chunk_iter = self.powers_main_group.chunks(self.dimention_x);
         let mut output: Vec<G1Point> = vec![];
         for _ in 0..y_len{
-            // let dd = chunk_iter.next();
-            // dd.iter().take(x_len).cloned().collect();
             output.extend( chunk_iter.next().unwrap().iter().take(x_len).cloned());
         }
 
@@ -76,16 +74,6 @@ where
     // }
 }
 
-
-
-/// Generates a structured reference string (SRS) for the KZG scheme.
-///
-/// # Parameters:
-/// - `dims`: Tuple `(rows, cols)` indicating the dimensions of the SRS.
-/// - `taus`: Tuple `(tau, theta)` where `tau` and `theta` are toxic waste elements.
-///
-/// # Returns:
-/// - A `StructuredReferenceString` containing G1 and G2 elements.
 pub fn create_srs(
     dims: (usize, usize),
 ) -> StructuredReferenceString<G1Point, G2Point> {
@@ -143,16 +131,6 @@ pub fn create_srs(
     StructuredReferenceString::new(dims.0, dims.1, &g1_points, &g2_points)
 }
 
-/// Computes a Vandermonde matrix for toxic wastes tau and theta.
-///
-/// # Parameters:
-/// - `tau`: Toxic waste scalar.
-/// - `theta`: Another toxic waste scalar.
-/// - `rows`: Number of rows.
-/// - `cols`: Number of columns.
-///
-/// # Returns:
-/// - A 2D vector containing the computed Vandermonde matrix.
 fn compute_vandemonde(
     tau: &FrElement,
     theta: &FrElement, 
