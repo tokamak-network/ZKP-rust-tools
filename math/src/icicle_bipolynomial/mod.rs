@@ -119,8 +119,7 @@ impl BivariatePolynomial {
         BivariatePolynomial,
         DensePolynomial
     ) {
-        println!("a, b: {:?}, {:?}", a, b);
-        
+             
         // Step 1: (x - a) 다항식 생성
         let zero = ScalarField::zero();
         let neg_a = zero - *a; // (x - a)에서 a의 음수
@@ -134,7 +133,7 @@ impl BivariatePolynomial {
         // Step 2: 각 y-고차항에 대해 (x - a)로 나눕니다.
         for poly in &self.coefficients {
             // 다항식 나눗셈 수행: poly / (x - a)
-            let (q, r) = poly.divide(&divisor);
+            let (q, r) = poly.ruffini_division(a)?;
             q_xy_coeffs.push(q);
             remainders.push(r.get_constant()); // 나머지의 상수항만 수집
         }
@@ -142,13 +141,14 @@ impl BivariatePolynomial {
 
         // Step 3: 잔여항을 R(y)로 조합
         // R(y) = sum (remainders[i] * y^i)
-        let mut remainder_y = DensePolynomial::from_coeffs(HostSlice::from_slice(&[]), self.y_degree);
+        let mut remainder_y = dense_poly_zero();
         for (i, r) in remainders.iter().enumerate() {
-            let remainder_poly = Self::dense_poly_new_monomial(r.clone(), i);
-            remainder_y = remainder_y.add(&remainder_poly);
+            if r.is_zero() {
+                continue; // 상수항이 0인 경우 추가하지 않음
+            }
+            let remainder_poly = dense_poly_new_monomial(r.clone(), i);
+            remainder_y = remainder_y + &remainder_poly; // 덧셈 연산자 사용
         }
-
-        // println!("R(y): {:?}", remainder_y);
 
         // Step 4: q_xy의 x_degree 업데이트 (1 감소)
         let new_x_degree = if self.x_degree > 0 { self.x_degree - 1 } else { 0 };
@@ -177,12 +177,9 @@ impl BivariatePolynomial {
             y_degree: self.y_degree,
         };
         
-        // println!("R(y): {:?}", remainder_y);
-        
         // Step 7: (y - b)로 나누기 위한 나머지 계산
         let (q_y, final_remainder) = remainder_y.ruffini_division(b)?;
-        // println!("final_remainder: {:?}", final_remainder);
-        
+
         (q_xy, final_remainder)
     }
 }
