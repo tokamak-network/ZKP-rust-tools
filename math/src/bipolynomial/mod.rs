@@ -169,7 +169,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
             if let Some(c) = y_row.last() {
                 // Convert the coefficient to the extension field L
                 let mut c = c.clone().to_extension();
-                
+                println!("c: {:?}", c);
                 let mut x_coeffs = alloc::vec::Vec::with_capacity(self.x_degree);
 
                 for coeff  in y_row.iter().rev().skip(1) {
