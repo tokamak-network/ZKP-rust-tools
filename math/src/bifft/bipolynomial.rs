@@ -159,9 +159,6 @@ mod tests {
         let fft_eval = BivariatePolynomial::evaluate_fft::<F>(&poly, 1,1,None, None).unwrap();
         // let naive_eval = poly.evaluate_slice(&twiddles);
 
-
-
-
         let naive_eval_vec = twiddles_y
             .iter()
             .map(|y_val| {

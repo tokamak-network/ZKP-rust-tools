@@ -10,17 +10,17 @@ use srs::StructuredReferenceString;
 
 /// Bivariate KZG 스킴 (icicle 버전)
 ///  - `F` : 필드(Generic),  `P` : 페어링 구조
-pub struct BivariateKateZaveruchaGoldbergIcicle<F> {
+pub struct BivariateKateZaveruchaGoldbergIcicle {
     pub srs: StructuredReferenceString,
-    pub _marker: core::marker::PhantomData<F>,
+    // pub _marker: core::marker::PhantomData<F>,
 }
 
-impl<P> BivariateKateZaveruchaGoldbergIcicle<P> {
+impl BivariateKateZaveruchaGoldbergIcicle {
     /// SRS로부터 스킴 생성
     pub fn new(srs: StructuredReferenceString) -> Self {
         Self {
             srs,
-            _marker: core::marker::PhantomData,
+            // _marker: core::marker::PhantomData,
         }
     }
 }

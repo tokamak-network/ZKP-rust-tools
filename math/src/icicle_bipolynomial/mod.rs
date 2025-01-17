@@ -121,19 +121,21 @@ pub struct BivariatePolynomial {
 
 impl BivariatePolynomial {
     pub fn new(rows: Vec<Vec<ScalarField>>) -> Self {
-        let y_degree = rows.len();
+        // 행 개수 = y_degree+1 임을 고려
+        let y_degree = rows.len().saturating_sub(1);
+    
         let x_degree = rows
             .iter()
             .map(|r| r.len())
             .max()
             .map(|len| len.saturating_sub(1))
             .unwrap_or(0);
-
+    
         let polys = rows.into_iter().map(|row| {
             let slice = HostSlice::from_slice(&row);
             DensePolynomial::from_coeffs(slice, row.len())
         }).collect();
-
+    
         BivariatePolynomial {
             coefficients: polys,
             x_degree,
@@ -183,6 +185,28 @@ impl BivariatePolynomial {
         acc
     }
 
+    pub fn flatten_out(&self) -> Vec<ScalarField> {
+        let total_len = (self.x_degree ) * (self.y_degree);
+        let mut flattened = Vec::with_capacity(total_len);
+
+        for row_index in 0..=self.y_degree {
+            let row_poly = &self.coefficients[row_index];
+            let row_coeffs = row_poly.get_coefficients(); 
+            // univariate poly의 계수 (길이 <= x_degree+1 일 수 있음)
+
+            for x_index in 0..=self.x_degree {
+                let val = if x_index < row_coeffs.len() {
+                    row_coeffs[x_index]
+                } else {
+                    ScalarField::zero()
+                };
+                flattened.push(val);
+            }
+        }
+
+        flattened
+    }
+
     pub fn ruffini_division(
         &self,
         a: &ScalarField,  // (x-a)
@@ -194,7 +218,7 @@ impl BivariatePolynomial {
         let mut q_xy_rows = Vec::with_capacity(self.y_degree);
         let mut remainders = Vec::with_capacity(self.y_degree);
     
-        for (y_index, poly) in self.coefficients.iter().enumerate() {
+        for (_y_index, poly) in self.coefficients.iter().enumerate() {
             // poly = row(y_index)
             let (mut q, r) = poly.ruffini_division(a)?;
     
@@ -246,7 +270,7 @@ impl BivariatePolynomial {
         };
     
         // (5) remainder_y를 (y - b) 로 Ruffini
-        let (mut q_y, final_rem) = remainder_y.ruffini_division(b)?;
+        let (mut q_y, _final_rem) = remainder_y.ruffini_division(b)?;
     
         // Univariate 몫 q_y 에서 trailing zero 제거
         let mut qy_cf = q_y.get_coefficients();
@@ -264,20 +288,19 @@ impl BivariatePolynomial {
     }
 }
 
-/// 간단한 거듭제곱 (연산자만 사용)
-fn pow_field(base: &ScalarField, exp: usize) -> ScalarField {
-    let mut r = ScalarField::one();
-    let mut cur = *base;
-    let mut e = exp;
-    while e > 0 {
-        if e & 1 == 1 {
-            r = r * cur;
-        }
-        cur = cur * cur;
-        e >>= 1;
-    }
-    r
-}
+// fn pow_field(base: &ScalarField, exp: usize) -> ScalarField {
+//     let mut r = ScalarField::one();
+//     let mut cur = *base;
+//     let mut e = exp;
+//     while e > 0 {
+//         if e & 1 == 1 {
+//             r = r * cur;
+//         }
+//         cur = cur * cur;
+//         e >>= 1;
+//     }
+//     r
+// }
 
 #[cfg(test)]
 mod tests {
@@ -464,5 +487,33 @@ mod tests {
         // 단순 체크
         assert_eq!(q_xy.coefficients.len(), expected_q_xy.coefficients.len());
         assert_eq!(q_y.get_coefficients(), expected_q_y.get_coefficients());
+    }
+
+    #[test]
+    fn test_bivariate_poly_flatten_out() {
+        let row0 = vec![
+            ScalarField::from_u32(1),
+            ScalarField::from_u32(2),
+        ];
+        let row1 = vec![
+            ScalarField::from_u32(3),
+            ScalarField::from_u32(4),
+        ];
+        let poly = BivariatePolynomial::new(vec![row0.clone(), row1.clone()]);
+
+        let flat = poly.flatten_out();
+        assert_eq!(flat.len(), 4);
+
+        // 순서: row_index=0 (y=0), x=0..1 → [1, 2], row_index=1 (y=1), x=0..1 → [3, 4]
+        // 따라서 [1, 2, 3, 4]
+        assert_eq!(
+            flat,
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(4)
+            ]
+        );
     }
 }
