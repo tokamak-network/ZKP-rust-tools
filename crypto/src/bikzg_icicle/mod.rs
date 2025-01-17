@@ -1,20 +1,28 @@
-// bikzg 모듈의 최상위 관리 파일
+//! Example module that uses `icicle_bipolynomial` for bivariate polynomial logic,
+//! instead of the lambdaworks-based `bipolynomial/mod.rs`.
 
-pub mod setup;
-pub mod commit;
-pub mod open;
-pub mod verify;
 pub mod srs;
-// pub mod utils;
+pub mod commit;
+// 만약 verify를 따로 작성한다면, 여기서 pub mod verify; 로 선언 가능(현재 제외)
 
-// SRS 및 관련 타입들을 모듈 외부로 노출
-pub use srs::{StructuredReferenceString, G1Point, G2Point};
+// 아래는 KZG 스킴의 예시 구조체
+use srs::StructuredReferenceString;
 
-// 공통 트레이트 및 타입들 노출
-// pub use utils::{PointConversion, ToIcicle};
+/// Bivariate KZG 스킴 (icicle 버전)
+///  - `F` : 필드(Generic),  `P` : 페어링 구조
+pub struct BivariateKateZaveruchaGoldbergIcicle<F> {
+    pub srs: StructuredReferenceString,
+    pub _marker: core::marker::PhantomData<F>,
+}
 
-// Bivariate KZG 구조체 및 구현 노출
-pub use commit::BivariateKateZaveruchaGoldberg;
+impl<P> BivariateKateZaveruchaGoldbergIcicle<P> {
+    /// SRS로부터 스킴 생성
+    pub fn new(srs: StructuredReferenceString) -> Self {
+        Self {
+            srs,
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
 
-// 외부 라이브러리 타입 재노출
-pub use icicle_bls12_381::curve::{G1Affine, G2Affine};
+// 여기까지는 verify 등의 로직 없이, 스킴 구조만 선언해 둠.

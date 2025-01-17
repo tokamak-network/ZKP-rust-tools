@@ -1,10 +1,12 @@
 use icicle_core::polynomials::UnivariatePolynomial;
-use icicle_bls12_377::polynomials::DensePolynomial;
-use icicle_bls12_377::curve::ScalarField;
+use icicle_bls12_381::polynomials::DensePolynomial;
+use icicle_bls12_381::curve::ScalarField;
 use icicle_runtime::memory::HostSlice;
 use icicle_core::traits::FieldImpl;
+use alloc::vec::Vec;
+use alloc::vec;
 
-/// `DensePolynomial`에 추가 기능을 제공하는 확장 트레이트
+/// DensePolynomial에 대한 확장 트레이트
 pub trait DensePolynomialExt {
     fn get_coefficients(&self) -> Vec<ScalarField>;
     fn scale(&self, scalar: &ScalarField) -> Self;
@@ -16,73 +18,75 @@ pub trait DensePolynomialExt {
 
 impl DensePolynomialExt for DensePolynomial {
     fn get_coefficients(&self) -> Vec<ScalarField> {
-        let nof_coeffs = self.get_nof_coeffs();
-        
-        let mut coeffs = vec![ScalarField::zero(); nof_coeffs as usize];
+        let n = self.get_nof_coeffs();
+        let mut coeffs = vec![ScalarField::zero(); n as usize];
         self.copy_coeffs(0, HostSlice::from_mut_slice(&mut coeffs));
         coeffs
     }
 
     fn scale(&self, scalar: &ScalarField) -> Self {
-        let scaled_coeffs: Vec<ScalarField> = self
+        // 각 계수에 scalar 곱
+        let new_coeffs: Vec<ScalarField> = self
             .get_coefficients()
             .iter()
             .map(|c| *c * *scalar)
             .collect();
 
         DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&scaled_coeffs[..]), 
-            scaled_coeffs.len()
+            HostSlice::from_slice(&new_coeffs),
+            new_coeffs.len()
         )
     }
 
     fn sub_constant(&mut self, constant: ScalarField) {
+        // 맨 앞 coeffs[0] -= constant
         let mut coeffs = self.get_coefficients();
         if coeffs.is_empty() {
             panic!("Polynomial has no coefficients.");
         }
-        coeffs[0] = coeffs[0] - constant;
+        coeffs[0] = coeffs[0] - constant; 
         *self = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&coeffs[..]),
+            HostSlice::from_slice(&coeffs),
             coeffs.len()
         );
     }
 
     fn get_constant(&self) -> ScalarField {
+        // 맨 앞이 상수항
         self.get_coeff(0)
     }
 
     fn ruffini_division(&self, b: &ScalarField) -> Result<(DensePolynomial, ScalarField), &'static str> {
-        if self.get_nof_coeffs() == 0 {
+        // (x - b) 꼴에서 b가 루트 역할
+        let n = self.get_nof_coeffs();
+        if n == 0 {
             return Err("Polynomial has no coefficients.");
         }
 
-        // 1) 뒤에서부터 temp를 업데이트하며 몫 계수 생성
-        let binding = self.get_coefficients();
-        let mut coeffs_rev = binding.iter().rev();
+        let coeffs = self.get_coefficients(); 
+        // 뒤에서부터 몫을 채움 (synthetic division)
+        let mut iter = coeffs.iter().rev();
+        let mut temp = *iter.next().unwrap(); 
+        let mut q = Vec::with_capacity(n as usize - 1);
 
-        let mut temp = coeffs_rev.next().unwrap().clone();
-        let mut quotient_coeffs = Vec::with_capacity(binding.len() - 1);
-
-        for &coeff in coeffs_rev {
-            quotient_coeffs.push(temp);
-            temp = temp * *b + coeff;
+        for &c in iter {
+            q.push(temp);
+            temp = temp * *b + c;  // temp = temp*b + c
         }
-        quotient_coeffs.reverse();
+        q.reverse(); 
 
-        // 2) 몫 다항식 생성 후, **끝에 0 계수 있으면 제거**
+        // 몫에서 trailing zero 제거
         let mut q_poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&quotient_coeffs),
-            quotient_coeffs.len(),
+            HostSlice::from_slice(&q),
+            q.len()
         );
-        // trailing zero trim
-        let mut q_coeffs_trim = q_poly.get_coefficients();
-        while q_coeffs_trim.len() > 1 && q_coeffs_trim.last().unwrap() == &ScalarField::zero() {
-            q_coeffs_trim.pop();
+        let mut q_cf = q_poly.get_coefficients();
+        while q_cf.len() > 1 && *q_cf.last().unwrap() == ScalarField::zero() {
+            q_cf.pop();
         }
         q_poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&q_coeffs_trim),
-            q_coeffs_trim.len(),
+            HostSlice::from_slice(&q_cf),
+            q_cf.len()
         );
 
         // temp 가 나머지
@@ -90,250 +94,195 @@ impl DensePolynomialExt for DensePolynomial {
     }
 
     fn add_polynomial(&self, other: &DensePolynomial) -> DensePolynomial {
-        let a_coeffs = self.get_coefficients();
-        let b_coeffs = other.get_coefficients();
-        let max_len = a_coeffs.len().max(b_coeffs.len());
-        let mut result_coeffs = Vec::with_capacity(max_len);
+        let a = self.get_coefficients();
+        let b = other.get_coefficients();
+        let max_len = a.len().max(b.len());
+        let mut sum = Vec::with_capacity(max_len);
 
         for i in 0..max_len {
-            let a = a_coeffs.get(i).cloned().unwrap_or_else(ScalarField::zero);
-            let b = b_coeffs.get(i).cloned().unwrap_or_else(ScalarField::zero);
-            result_coeffs.push(a + b);
+            let aa = if i < a.len() { a[i] } else { ScalarField::zero() };
+            let bb = if i < b.len() { b[i] } else { ScalarField::zero() };
+            sum.push(aa + bb);
         }
+
         DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&result_coeffs[..]), 
-            result_coeffs.len()
+            HostSlice::from_slice(&sum),
+            sum.len()
         )
     }
 }
 
-/// 이변량 다항식 구조체
+/// 이변량 다항식
 pub struct BivariatePolynomial {
-    pub coefficients: Vec<DensePolynomial>, // 각 y별 DensePolynomial (x에 대한)
-    pub x_degree: usize,                   
-    pub y_degree: usize,                   
+    pub coefficients: Vec<DensePolynomial>, // row i => y^i
+    pub x_degree: usize,
+    pub y_degree: usize,
 }
 
 impl BivariatePolynomial {
-    pub fn new(coefficients: Vec<Vec<ScalarField>>) -> Self {
-        let y_degree = coefficients.len();
-        let x_degree = coefficients
+    pub fn new(rows: Vec<Vec<ScalarField>>) -> Self {
+        let y_degree = rows.len();
+        let x_degree = rows
             .iter()
-            .map(|row| row.len())
+            .map(|r| r.len())
             .max()
             .map(|len| len.saturating_sub(1))
             .unwrap_or(0);
 
-        let dense_polys = coefficients
-            .into_iter()
-            .map(|row| {
-                let host_slice = HostSlice::from_slice(&row[..]);
-                DensePolynomial::from_coeffs(host_slice, row.len())
-            })
-            .collect();
+        let polys = rows.into_iter().map(|row| {
+            let slice = HostSlice::from_slice(&row);
+            DensePolynomial::from_coeffs(slice, row.len())
+        }).collect();
 
         BivariatePolynomial {
-            coefficients: dense_polys,
+            coefficients: polys,
             x_degree,
             y_degree,
         }
     }
 
     pub fn zero() -> Self {
-        let zero_coeffs = vec![ScalarField::zero()];
-        let host_slice = HostSlice::from_slice(&zero_coeffs[..]);
+        let z = vec![ScalarField::zero()];
+        let slice = HostSlice::from_slice(&z);
         BivariatePolynomial {
-            coefficients: vec![DensePolynomial::from_coeffs(host_slice, zero_coeffs.len())],
+            coefficients: vec![DensePolynomial::from_coeffs(slice, z.len())],
             x_degree: 0,
             y_degree: 0,
         }
     }
 
-    pub fn flatten_out(&self) -> Vec<ScalarField> {
-        self.coefficients
-            .iter()
-            .flat_map(|poly| poly.get_coefficients())
-            .collect()
-    }
-
-    pub fn scale(&self, x_factor: &ScalarField, y_factor: &ScalarField) -> Self {
-        let scaled_coefficients: Vec<DensePolynomial> = self
-            .coefficients
-            .iter()
-            .enumerate()
-            .map(|(y, poly)| {
-                let y_power = pow_field(y_factor, y as usize);
-                let scaled_poly = poly.scale(x_factor);
-                let scaled_coeffs: Vec<ScalarField> = scaled_poly
-                    .get_coefficients()
-                    .iter()
-                    .map(|c| *c * y_power)
-                    .collect();
-
-                DensePolynomial::from_coeffs(
-                    HostSlice::from_slice(&scaled_coeffs[..]), 
-                    scaled_coeffs.len()
-                )
-            })
-            .collect();
-
-        BivariatePolynomial {
-            coefficients: scaled_coefficients,
-            x_degree: self.x_degree,
-            y_degree: self.y_degree,
-        }
-    }
-
-    pub fn sub_by_field_element(&mut self, element: &ScalarField) {
-        if let Some(first_poly) = self.coefficients.get_mut(0) {
-            first_poly.sub_constant(*element);
-        } else {
-            let zero = ScalarField::zero();
-            let neg_element = zero - *element;
-            let neg_coeffs = vec![neg_element];
-            let host_slice = HostSlice::from_slice(&neg_coeffs[..]);
-            self.coefficients.push(DensePolynomial::from_coeffs(host_slice, neg_coeffs.len()));
-        }
-    }
-
-    pub fn evaluate(&self, x: &ScalarField, y: &ScalarField) -> ScalarField {
-        let mut result = ScalarField::zero();
-        // 주의: 여기서는 coefficients[0]이 y^0, coefficients[1]이 y^1, ... 로 보고 있음
-        for (i, poly) in self.coefficients.iter().enumerate() {
-            let y_power = pow_field(y, i as usize);
-            let poly_eval = poly.eval(x);
-            let term = poly_eval * y_power;
-            result = result + term;
-        }
-        result
-    }
-
-    fn dense_poly_new_monomial(coeff: ScalarField, degree: usize) -> DensePolynomial {
-        let mut coeffs = vec![ScalarField::zero(); degree + 1];
-        coeffs[degree] = coeff;
+    fn dense_poly_new_monomial(c: ScalarField, deg: usize) -> DensePolynomial {
+        // degree+1 길이, 해당 차수에 c
+        let mut cf = vec![ScalarField::zero(); deg+1];
+        cf[deg] = c;
         DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&coeffs[..]), 
-            coeffs.len()
+            HostSlice::from_slice(&cf),
+            cf.len()
         )
     }
 
     fn dense_poly_zero() -> DensePolynomial {
-        let coeffs = vec![ScalarField::zero()];
-        DensePolynomial::from_coeffs(HostSlice::from_slice(&coeffs[..]), coeffs.len())
+        let cf = vec![ScalarField::zero()];
+        DensePolynomial::from_coeffs(
+            HostSlice::from_slice(&cf),
+            cf.len()
+        )
+    }
+
+    pub fn evaluate(&self, x: &ScalarField, y: &ScalarField) -> ScalarField {
+        // row i => y^i
+        let mut acc = ScalarField::zero();
+        for (i, poly) in self.coefficients.iter().enumerate() {
+            let mut ypow = ScalarField::one();
+            for _ in 0..i {
+                ypow = ypow * *y;
+            }
+            let px = poly.eval(x);
+            acc = acc + (px * ypow);
+        }
+        acc
     }
 
     pub fn ruffini_division(
-        &self, 
-        a: &ScalarField, 
-        b: &ScalarField
+        &self,
+        a: &ScalarField,  // (x-a)
+        b: &ScalarField,  // (y-b)
     ) -> Result<(BivariatePolynomial, DensePolynomial), &'static str> {
-        println!("Starting Ruffini Division with a = {:?}, b = {:?}", a, b);
-    
-        let mut q_xy_coeffs: Vec<DensePolynomial> = vec![Self::dense_poly_zero(); self.y_degree]; 
-        // y_degree개 자리 미리 확보 (row i 몫이 들어갈 자리)
-    
+        // (1) (x - a) 로 y=0..y_degree-1 순서대로 나누기
+        //     bipolynomial/mod.rs 쪽은 axis_iter(Axis(0)) 윗행부터 y_index=0 -> y^0 → y1, ...
+        //     여기서도 i=0 => row0 (y^0), i=1 => row1 (y^1) 순으로.
+        let mut q_xy_rows = Vec::with_capacity(self.y_degree);
         let mut remainders = Vec::with_capacity(self.y_degree);
     
-        // --- 변경점: 아래서부터 위로. 
-        //     i = (y_degree - 1) down to 0
-        for rev_i in 0..self.y_degree {
-            let i = self.y_degree - 1 - rev_i;
-            let poly = &self.coefficients[i];
-    
+        for (y_index, poly) in self.coefficients.iter().enumerate() {
+            // poly = row(y_index)
             let (mut q, r) = poly.ruffini_division(a)?;
     
-            // univariate 몫에서 trailing zeros trim
-            let mut q_coeffs = q.get_coefficients();
-            while q_coeffs.len() > 1 && q_coeffs.last().unwrap() == &ScalarField::zero() {
-                q_coeffs.pop();
+            // Univariate 몫에서 trailing zero 제거
+            let mut q_cf = q.get_coefficients();
+            while q_cf.len() > 1 && q_cf.last().unwrap() == &ScalarField::zero() {
+                q_cf.pop();
             }
             q = DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&q_coeffs),
-                q_coeffs.len()
+                HostSlice::from_slice(&q_cf),
+                q_cf.len()
             );
     
-            // q를 q_xy_coeffs[i] 자리에 넣는다. (기존 row와 동일한 i)
-            q_xy_coeffs[i] = q;
+            // row(y_index)의 몫
+            q_xy_rows.push(q);
+            // row(y_index)의 remainder
             remainders.push(r);
         }
-        println!("remainders (bottom->top): {:?}", remainders);
     
-        // remainders는 현재 "아랫행부터" 들어가 있으므로, 뒤집어서 remainders[0]이 y^0
-        remainders.reverse();
-        // => 이제 remainders[0] = row0의 나머지, remainders[1] = row1 나머지 ...
-    
-        // (2) R(y) = sum_{i=0..} [ remainders[i] * y^i ]
+        // (2) remainder_y = ∑_{i=0..} remainders[i]*y^i
         let mut remainder_y = Self::dense_poly_zero();
-        for (i, &r) in remainders.iter().enumerate() {
-            let remainder_poly = Self::dense_poly_new_monomial(r, i);
-            remainder_y = remainder_y.add_polynomial(&remainder_poly);
+        for (i, &rem) in remainders.iter().enumerate() {
+            // monomial = rem*x^0 with degree=i in y
+            let monomial = Self::dense_poly_new_monomial(rem, i);
+            remainder_y = remainder_y.add_polynomial(&monomial);
         }
     
-        // (3) x차수 1 감소 (테스트가 이를 기대한다면 유지)
-        let new_x_degree = if self.x_degree > 0 {
-            self.x_degree - 1
-        } else {
-            0
-        };
+        // (3) x_degree: bipolynomial/mod.rs 처럼 굳이 줄이지 않고 그대로
+        //     혹은 필요 시 saturating_sub(1).
+        let new_x_degree = self.x_degree;
     
-        // (4) q_xy_coeffs 각 DensePolynomial을 new_x_degree+1 길이로 맞추기
-        for q in q_xy_coeffs.iter_mut() {
-            let mut coeffs = q.get_coefficients();
-            while coeffs.len() < new_x_degree + 1 {
-                coeffs.push(ScalarField::zero());
+        // (4) q_xy_rows[i] 의 coeff 길이를 (new_x_degree+1)로 맞추기
+        for q_poly in q_xy_rows.iter_mut() {
+            let mut cfs = q_poly.get_coefficients();
+            while cfs.len() < new_x_degree + 1 {
+                cfs.push(ScalarField::zero());
             }
-            coeffs.truncate(new_x_degree + 1);
-            *q = DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&coeffs),
-                coeffs.len()
+            cfs.truncate(new_x_degree + 1);
+            *q_poly = DensePolynomial::from_coeffs(
+                HostSlice::from_slice(&cfs),
+                cfs.len()
             );
         }
     
         let q_xy = BivariatePolynomial {
-            coefficients: q_xy_coeffs,
+            coefficients: q_xy_rows,
             x_degree: new_x_degree,
             y_degree: self.y_degree,
         };
     
-        // (5) remainder_y를 (y - b)로 Ruffini
-        let (mut q_y, final_remainder) = remainder_y.ruffini_division(b)?;
+        // (5) remainder_y를 (y - b) 로 Ruffini
+        let (mut q_y, final_rem) = remainder_y.ruffini_division(b)?;
     
-        // univariate 몫 trimming
-        let mut qy_coeffs = q_y.get_coefficients();
-        while qy_coeffs.len() > 1 && qy_coeffs.last().unwrap() == &ScalarField::zero() {
-            qy_coeffs.pop();
+        // Univariate 몫 q_y 에서 trailing zero 제거
+        let mut qy_cf = q_y.get_coefficients();
+        while qy_cf.len() > 1 && qy_cf.last().unwrap() == &ScalarField::zero() {
+            qy_cf.pop();
         }
         q_y = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&qy_coeffs),
-            qy_coeffs.len()
+            HostSlice::from_slice(&qy_cf),
+            qy_cf.len()
         );
     
-        println!("final_remainder: {:?}", final_remainder);
+    
     
         Ok((q_xy, q_y))
     }
 }
 
-/// 거듭제곱 계산
-fn pow_field(base: &ScalarField, exponent: usize) -> ScalarField {
-    let mut result = ScalarField::one();
+/// 간단한 거듭제곱 (연산자만 사용)
+fn pow_field(base: &ScalarField, exp: usize) -> ScalarField {
+    let mut r = ScalarField::one();
     let mut cur = *base;
-    let mut e = exponent;
+    let mut e = exp;
     while e > 0 {
-        if e % 2 == 1 {
-            result = result * cur;
+        if e & 1 == 1 {
+            r = r * cur;
         }
         cur = cur * cur;
-        e /= 2;
+        e >>= 1;
     }
-    result
+    r
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use icicle_bls12_377::curve::ScalarField;
+    use icicle_bls12_381::curve::ScalarField;
 
     /// 간단한 필드 원소 생성
     fn create_field_elements() -> (ScalarField, ScalarField, ScalarField, ScalarField) {

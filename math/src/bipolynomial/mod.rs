@@ -169,7 +169,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
             if let Some(c) = y_row.last() {
                 // Convert the coefficient to the extension field L
                 let mut c = c.clone().to_extension();
-                println!("c: {:?}", c);
+                // println!("c: {:?}", c);
                 let mut x_coeffs = alloc::vec::Vec::with_capacity(self.x_degree);
 
                 for coeff  in y_row.iter().rev().skip(1) {
@@ -184,24 +184,24 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
                 for (x_index, x_coeff) in x_coeffs.iter().enumerate() {
                     q_xy_coeffs[(y_index, x_index)] = x_coeff.clone();
                 }
-                println!("c, y_index: {:?}, {:?}", c, y_index);
+                // println!("c, y_index: {:?}, {:?}", c, y_index);
                 // Create the remainder polynomial
                 let remainder_poly = UnivariatePolynomial::new_monomial(c, y_index);
-                println!("");
-                println!("remainder_poly: {:?} {:?}", remainder_poly, remainder_y.clone().add(remainder_poly.clone()));
+                // println!("");
+                // println!("remainder_poly: {:?} {:?}", remainder_poly, remainder_y.clone().add(remainder_poly.clone()));
                 remainder_y = remainder_y.add(remainder_poly);
             }
         }
-        println!("q_xy_coeffs: {:?}", q_xy_coeffs);
+        // println!("q_xy_coeffs: {:?}", q_xy_coeffs);
         let q_xy = BivariatePolynomial {
             coefficients: q_xy_coeffs.clone(), // Clone here if you plan to use q_xy_coeffs later
             x_degree: q_xy_coeffs.ncols().max(0),
             y_degree: q_xy_coeffs.nrows().max(0),
         };
-        println!("remainder_y: {:?}", remainder_y);
+        // println!("remainder_y: {:?}", remainder_y);
         // Perform Ruffini division on the univariate polynomial
         let q_y = remainder_y.ruffini_division(b);
-        println!("q_y: {:?}", q_y);
+        // println!("q_y: {:?}", q_y);
         (q_xy, q_y)
     }
 
@@ -763,7 +763,7 @@ mod tests {
 
         // Perform Ruffini division by (x - 1) and (y - 2)
         let (q_xy, q_y) = p.ruffini_division(&FE::new(1), &FE::new(2));
-        println!("q_xy: {:?}", q_xy);
+        // println!("q_xy: {:?}", q_xy);
         // Define the expected quotient polynomial (3 + x + 2xy + x^2y + 4xy^2)
         let expected_q_xy = BivariatePolynomial::new(array![
             [FE::new(3), FE::new(1), FE::new(0), FE::new(0)],
@@ -780,8 +780,8 @@ mod tests {
         ]);
 
         // Assert that the quotient and remainder are as expected
-        println!("expected_q_y: {:?}", expected_q_y);
-        println!("q_y: {:?}", q_y);
+        // println!("expected_q_y: {:?}", expected_q_y);
+        // println!("q_y: {:?}", q_y);
         assert_eq!(expected_q_xy, q_xy, "The quotient polynomial is incorrect.");
         assert_eq!(expected_q_y, q_y, "The remainder polynomial is incorrect.");
     }
