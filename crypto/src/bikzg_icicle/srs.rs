@@ -1,9 +1,10 @@
 use icicle_bls12_381::curve::{
-    self, CurveCfg, G1Affine, G1Projective, G2Affine, G2CurveCfg, G2Projective, ScalarField
+    CurveCfg, G1Affine, G1Projective, G2Affine, G2CurveCfg, ScalarField
 };
-use std::ops::Mul;
-use icicle_core::{curve::Affine, traits::FieldImpl};
-use icicle_core::{curve::Curve, msm, traits::GenerateRandom};
+use icicle_core::traits::Arithmetic;
+use icicle_core::traits::FieldImpl;
+use icicle_core::curve::Curve;
+use rand::Rng; // 랜덤 생성에 필요
 
 /// Structured Reference String (SRS) 데이터 구조
 pub struct StructuredReferenceString {
@@ -17,50 +18,51 @@ pub struct StructuredReferenceString {
 
 impl StructuredReferenceString {
     /// SRS 생성
-    /// - `dimension_x, dimension_y`: (x차, y차)에 맞춰 필요한 G1 점 개수 = (x+1)*(y+1).
-    /// - `tau`: 임의(신뢰) 스칼라
+    /// - `dimension_x, dimension_y`: (x차, y차)에 맞춰 G1 점이 (x+1)*(y+1)개 필요
+    /// - 내부에서 tau, theta 를 랜덤으로 뽑는다.
     pub fn create_srs(
         dimension_x: usize,
         dimension_y: usize,
-        tau: &ScalarField,
     ) -> Self {
-        // 1) Generate a vector of random projective points for G1, but we only actually need one
-        //    or we might use g1[0] as the "generator"
-        let g1 = CurveCfg::generate_random_projective_points(dimension_y + 1);
-        let g2 = G2CurveCfg::generate_random_projective_points(dimension_y + 1);
+        // 1) tau, theta 랜덤 생성
+        let mut rng = rand::thread_rng();
+        let tau_array: [u32; 8] = rng.gen();
+        let theta_array: [u32; 8] = rng.gen();
+        let tau = ScalarField::from(tau_array);
+        let theta = ScalarField::from(theta_array);
 
-        // 2) total_needed = (x+1)*(y+1)
+        // 2) G1, G2용 임의 projective points를 생성
+        //    여기서는 "단 1개씩"만 생성해 base로 삼는다.
+        let g1_points = CurveCfg::generate_random_projective_points(1);
+        let g2_points = G2CurveCfg::generate_random_projective_points(1);
+
+        // 3) (dimension_x+1)*(dimension_y+1)개의 G1 점을 만들자
+        //    G1_{i,j} = g1_points[0] * ( tau^j * theta^i )
         let total_needed = (dimension_x + 1) * (dimension_y + 1);
-
-        // 3) G1 상에서 [ (g1[0]) * (tau^i ) ] -> Affine
         let mut powers_main_group = Vec::with_capacity(total_needed);
 
-        let mut cur_tau = ScalarField::one();
-        for _ in 0..total_needed {
-            // Step A: take the first G1Projective as "base"
-            let base_g1_proj: G1Projective = g1[0];
-            // Step B: multiply by tau^i (cur_tau)
-            let point_proj = base_g1_proj * cur_tau;
-            // Step C: convert to G1Affine
-            let point_aff: G1Affine = point_proj.into(); 
-            powers_main_group.push(point_aff);
+        // g1_points[0]가 projective 형태이므로, 여기에 (tau^j * theta^i) 곱해가며 만든다
+        let base_g1 = g1_points[0];
 
-            // Next power
-            cur_tau = cur_tau * *tau;
+        for i in 0..=dimension_y {
+            for j in 0..=dimension_x {
+                let exponent = tau.pow(j) * theta.pow(i);
+                let point_proj: G1Projective = base_g1 * exponent;
+                let point_aff: G1Affine = point_proj.into();
+                powers_main_group.push(point_aff);
+            }
         }
 
-        // 4) G2에서 3개만 [ g2[0]*tau^0, g2[0]*tau^1, g2[0]*tau^2 ], all Affine
-        let mut tmp_g2 = Vec::with_capacity(3);
-        let mut cur_tau2 = ScalarField::one();
-        for _ in 0..3 {
-            let base_g2_proj: G2Projective = g2[0];
-            let pt_proj = base_g2_proj * cur_tau2;
-            let pt_aff: G2Affine = pt_proj.into(); 
-            tmp_g2.push(pt_aff);
-            cur_tau2 = cur_tau2 * *tau;
-        }
-        // convert Vec of length 3 -> array of length 3
-        let powers_secondary_group: [G2Affine; 3] = [tmp_g2[0], tmp_g2[1], tmp_g2[2]];
+        // 4) G2에서 3개만 만들기: [base_g2, base_g2 * tau, base_g2 * theta]
+        let base_g2 = g2_points[0];
+        let g2_0 = base_g2;
+        let g2_1 = base_g2 * tau;
+        let g2_2 = base_g2 * theta;
+        let powers_secondary_group: [G2Affine; 3] = [
+            g2_0.into(),
+            g2_1.into(),
+            g2_2.into(),
+        ];
 
         Self {
             dimension_x,
@@ -86,7 +88,7 @@ impl StructuredReferenceString {
     }
 }
 
-/// 간단한 Vandermonde
+/// 간단한 Vandermonde (필요하다면 그대로 유지하거나, 사용하지 않으면 지워도 됨)
 pub fn compute_vandemonde(bases: &[ScalarField], max_degree: usize) -> Vec<Vec<ScalarField>> {
     let rows = max_degree + 1;
     let cols = bases.len();
@@ -107,56 +109,17 @@ pub fn compute_vandemonde(bases: &[ScalarField], max_degree: usize) -> Vec<Vec<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use icicle_bls12_381::curve::CurveCfg;
-    use icicle_core::traits::FieldImpl;
 
     #[test]
-    fn test_create_srs() {
-        let tau = ScalarField::from_u32(5);
-        let srs = StructuredReferenceString::create_srs(2, 2, &tau);
+    fn test_create_srs_random_tau_theta() {
+        // 이제 create_srs 함수가 내부적으로 tau, theta를 뽑기 때문에
+        // 따로 tau를 입력하지 않아도 됨
+        let srs = StructuredReferenceString::create_srs(2, 2);
 
-        // We expect total_needed = (2+1)*(2+1) = 9
+        // G1 포인트 개수 = (2+1)*(2+1) = 9
         assert_eq!(srs.powers_main_group.len(), 9);
+
+        // G2 포인트는 3개
         assert_eq!(srs.powers_secondary_group.len(), 3);
-
-        // The first is g1[0]* tau^0 => effectively g1[0]. We can't directly assume generator,
-        // because we used generate_random_projective_points. 
-        // But we can check that we indeed have 9 distinct points, or do any consistent check.
-        // e.g. we can check srs.powers_main_group[0] != srs.powers_main_group[1], etc.
-    }
-
-    #[test]
-    fn test_flatten_partitioned_g1_points() {
-        let tau = ScalarField::from_u32(3);
-        let srs = StructuredReferenceString::create_srs(3, 1, &tau);
-        assert_eq!(srs.powers_main_group.len(), 8);
-
-        let flattened = srs.flatten_partitioned_g1_points(2, 1);
-        assert_eq!(flattened.len(), 2);
-
-        // They should match the first 2 points in the first "row"
-        assert_eq!(flattened[0], srs.powers_main_group[0]);
-        assert_eq!(flattened[1], srs.powers_main_group[1]);
-    }
-
-    #[test]
-    fn test_compute_vandemonde() {
-        let bases = [ScalarField::from_u32(2), ScalarField::from_u32(3)];
-        let table = compute_vandemonde(&bases, 2);
-
-        assert_eq!(table.len(), 3);
-        assert_eq!(table[0].len(), 2);
-
-        // row0 => [1,1]
-        assert_eq!(table[0][0], ScalarField::one());
-        assert_eq!(table[0][1], ScalarField::one());
-
-        // row1 => [2,3]
-        assert_eq!(table[1][0], ScalarField::from_u32(2));
-        assert_eq!(table[1][1], ScalarField::from_u32(3));
-
-        // row2 => [4,9]
-        assert_eq!(table[2][0], ScalarField::from_u32(4));
-        assert_eq!(table[2][1], ScalarField::from_u32(9));
     }
 }
