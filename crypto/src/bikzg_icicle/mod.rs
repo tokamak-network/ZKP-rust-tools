@@ -1,28 +1,62 @@
-//! Example module that uses `icicle_bipolynomial` for bivariate polynomial logic,
-//! instead of the lambdaworks-based `bipolynomial/mod.rs`.
-
+// src/bikzg_icicle/mod.rs
 pub mod srs;
 pub mod commit;
-// 만약 verify를 따로 작성한다면, 여기서 pub mod verify; 로 선언 가능(현재 제외)
+pub mod open;
+pub mod verify;
 
-// 아래는 KZG 스킴의 예시 구조체
-use srs::StructuredReferenceString;
-
-/// Bivariate KZG 스킴 (icicle 버전)
-///  - `F` : 필드(Generic),  `P` : 페어링 구조
 pub struct BivariateKateZaveruchaGoldbergIcicle {
-    pub srs: StructuredReferenceString,
-    // pub _marker: core::marker::PhantomData<F>,
+    pub srs: srs::StructuredReferenceString,    
 }
 
 impl BivariateKateZaveruchaGoldbergIcicle {
-    /// SRS로부터 스킴 생성
-    pub fn new(srs: StructuredReferenceString) -> Self {
-        Self {
-            srs,
-            // _marker: core::marker::PhantomData,
-        }
+    pub fn new(srs: srs::StructuredReferenceString) -> Self {
+        Self { srs }
     }
 }
 
-// 여기까지는 verify 등의 로직 없이, 스킴 구조만 선언해 둠.
+#[cfg(test)]
+mod tests {
+    use crate::{bikzg::IsCommitmentScheme as _, bikzg_icicle::{
+        srs::StructuredReferenceString as SrsIcicle, BivariateKateZaveruchaGoldbergIcicle as BIKZG_Icicle
+    }};
+    
+    use icicle_bls12_381::curve::ScalarField;
+    use icicle_core::traits::FieldImpl;
+    use ndarray::array;
+    use zkp_rust_tools_math::icicle_bipolynomial::BivariatePolynomial;
+
+    // use crate::bikzg::{
+    //     BivariateKateZaveruchaGoldberg,
+    //     utils::{icicle_scalar_to_lambdaworks, icicle_g1_to_lambdaworks, icicle_proof_to_tuple},
+    // };
+    // use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::pairing::BLS12381AtePairing;
+
+    #[test]
+    fn test_kzg() {        
+        let icicle_srs = SrsIcicle::create_srs(1, 1);
+        let bikzg_srs = icicle_srs.to_lambdaworks_srs();
+        let icicle_bikzg = BIKZG_Icicle::new(icicle_srs);
+
+        let coeffs_2d = array![
+            [ScalarField::from_u32(1), ScalarField::from_u32(1)],
+            [ScalarField::from_u32(1), ScalarField::from_u32(1)]
+        ];
+        let coeffs_vec: Vec<Vec<ScalarField>> = coeffs_2d
+            .outer_iter()
+            .map(|row| row.to_vec())
+            .collect();
+        let poly = BivariatePolynomial::new(coeffs_vec);
+        let p_commitment = icicle_bikzg.commit_bivariate(&poly);
+
+        let x = ScalarField::from_u32(1); // 1로 초기화
+        let y = ScalarField::from_u32(10); // 10으로 초기화
+        let evaluation = poly.evaluate(&x, &y);
+
+        let proof = icicle_bikzg.open(&x, &y, &evaluation, &poly);
+
+        let is_valid = icicle_bikzg.verify(&x, &y, &evaluation, &p_commitment, &proof_tuple);
+        println!("is_valid: {:?}", is_valid);
+
+        assert!(is_valid, "bikzg verify should pass, but it failed.");
+    }
+}

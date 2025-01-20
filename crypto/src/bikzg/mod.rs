@@ -80,8 +80,8 @@ mod tests {
         let y = FrElement::from(10);
         let evaluation = bp.evaluate(&x, &y);
         let proof = bikzg.open(&x, &y, &evaluation,&bp);
-        // let fake_proof = (BLS12381Curve::generator(),BLS12381Curve::generator());
         
+        println!("proof: {:?}", proof.0);
         assert!(bikzg.verify(&x, &y,&evaluation, &p_commitment, &proof));
     }
 

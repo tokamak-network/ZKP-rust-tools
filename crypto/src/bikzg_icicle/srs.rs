@@ -1,10 +1,28 @@
 use icicle_bls12_381::curve::{
-    CurveCfg, G1Affine, G1Projective, G2Affine, G2CurveCfg, ScalarField
+    CurveCfg, G1Affine, G1Projective, G2Affine, G2CurveCfg, ScalarField, G2Projective
 };
 use icicle_core::traits::Arithmetic;
 use icicle_core::traits::FieldImpl;
 use icicle_core::curve::Curve;
-use rand::Rng; // 랜덤 생성에 필요
+use rand::Rng;
+
+use crate::bikzg::srs::StructuredReferenceString as BivariateSRS;
+use crate::bikzg::utils::{
+    icicle_g1_projective_to_lw,  // 기존 함수명
+    icicle_g2_projective_to_lw,  // 새로 만들었다고 가정
+};
+
+use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::{
+        curve::BLS12381Curve, 
+        twist::BLS12381TwistCurve,
+    };
+// use lambdaworks_math::field::traits::IsField;
+use rayon::prelude::*;
+
+use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
+
+pub type G1Point = ShortWeierstrassProjectivePoint<BLS12381Curve>;
+pub type G2Point = ShortWeierstrassProjectivePoint<BLS12381TwistCurve>;
 
 /// Structured Reference String (SRS) 데이터 구조
 pub struct StructuredReferenceString {
@@ -72,9 +90,6 @@ impl StructuredReferenceString {
         }
     }
 
-    /// G1 포인트를 (y행 x열) 순서로 평탄화
-    /// - x_len: x방향 개수
-    /// - y_len: y방향 개수
     pub fn flatten_partitioned_g1_points(&self, x_len: usize, y_len: usize) -> Vec<G1Affine> {
         let mut chunk_iter = self.powers_main_group.chunks(self.dimension_x + 1);
         let mut output = Vec::new();
@@ -85,6 +100,37 @@ impl StructuredReferenceString {
             }
         }
         output
+    }
+
+    pub fn to_lambdaworks_srs(&self) -> BivariateSRS<G1Point, G2Point> {
+        // 1) G1Affine -> G1Projective -> lambdaworks
+        let g1_lw = self
+            .powers_main_group
+            .iter()
+            .map(|g1_affine| {
+                let proj: G1Projective = (*g1_affine).into();
+                icicle_g1_projective_to_lw(&proj).unwrap()
+            })
+            .collect();
+
+        // 2) G2Affine -> G2Projective -> lambdaworks
+        let g2_lw_vec: Vec<_> = self
+            .powers_secondary_group
+            .iter()
+            .map(|g2_affine| {
+                let proj: G2Projective = (*g2_affine).into();
+                icicle_g2_projective_to_lw(&proj).unwrap() // returns G1-based point?
+            })
+            .collect();
+        let g2_lw: [G2Point; 3] = g2_lw_vec.try_into().expect("Expected 3 elements");
+
+        BivariateSRS {
+            dimention_x: self.dimension_x,
+            dimention_y: self.dimension_y,
+            powers_main_group: g1_lw,
+            powers_secondary_group: g2_lw,
+        }
+    
     }
 }
 

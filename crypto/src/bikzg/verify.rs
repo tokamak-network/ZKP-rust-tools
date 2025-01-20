@@ -33,6 +33,7 @@ impl<
         let tau_g2 = &self.srs.powers_secondary_group[1];
         let theta_g2 = &self.srs.powers_secondary_group[2];
 
+
         // Compute the pairing result using P::compute_batch
         let pairing_result = P::compute_batch(&[
             (

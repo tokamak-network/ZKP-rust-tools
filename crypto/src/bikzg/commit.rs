@@ -33,6 +33,9 @@ impl<
 
         let g1_points = self.srs.flatten_partitioned_g1_points(poly.x_degree, poly.y_degree);
 
+        println!("commit_bivariate: coefficients: {:?}, {:?}", coefficients.len(), g1_points.len());
+        println!("coefficients: {:?}", coefficients);
+
         msm(&coefficients, &g1_points)
             .expect("MSM failed: Scalars and points must have the same length.")
     }
@@ -89,6 +92,8 @@ impl<
         let g2 = &self.srs.powers_secondary_group[0];
         let tau_g2 = &self.srs.powers_secondary_group[1];
         let theta_g2 = &self.srs.powers_secondary_group[2];
+
+        // println!("g2: {:?}", g2);
 
         let pairing_result = P::compute_batch(&[
             (

@@ -10,9 +10,6 @@ use zkp_rust_tools_math::icicle_bipolynomial::{BivariatePolynomial, DensePolynom
 
 use super::BivariateKateZaveruchaGoldbergIcicle; 
 
-
-// AFTER (수정)
-
 impl BivariateKateZaveruchaGoldbergIcicle {
     pub fn commit_bivariate(
         &self,
@@ -113,7 +110,7 @@ mod tests {
     use ndarray::array;
 
     // 만약 create_srs가 다른 모듈에 있다면 적절히 import
-    use crate::bikzg_icicle::StructuredReferenceString;
+    use crate::bikzg_icicle::srs::StructuredReferenceString;
 
     #[test]
     fn test_commit_bivariate_simple() {

@@ -207,6 +207,36 @@ impl BivariatePolynomial {
         flattened
     }
 
+    pub fn sub_by_field_element(&self, element: ScalarField) -> Self {
+        // 새롭게 구성할 DensePolynomial들의 벡터
+        let mut new_coeffs = Vec::with_capacity(self.coefficients.len());
+
+        for dp in &self.coefficients {
+            // 1) 각 row(i)에 해당하는 univariate poly의 계수를 읽음
+            let mut cfs = dp.get_coefficients();
+
+            // 2) 각 계수에서 element를 뺌
+            for c in &mut cfs {
+                *c = *c - element; 
+            }
+
+            // 3) 수정된 계수로 새로운 DensePolynomial 생성
+            let new_dp = DensePolynomial::from_coeffs(
+                HostSlice::from_slice(&cfs),
+                cfs.len()
+            );
+            new_coeffs.push(new_dp);
+        }
+
+        // 4) 자기 자신의 x_degree, y_degree를 유지하되
+        //    coefficients는 새롭게 만든 것으로 대체
+        BivariatePolynomial {
+            coefficients: new_coeffs,
+            x_degree: self.x_degree,
+            y_degree: self.y_degree,
+        }
+    }
+
     pub fn ruffini_division(
         &self,
         a: &ScalarField,  // (x-a)
@@ -514,6 +544,85 @@ mod tests {
                 ScalarField::from_u32(3),
                 ScalarField::from_u32(4)
             ]
+        );
+    }
+
+    #[test]
+    fn test_bivariate_sub_by_field_element() {
+        // 예: (y=0) 행 => [1, 2, 3],
+        //      (y=1) 행 => [4, 5, 6].
+        // x_degree=2, y_degree=1
+        // => flatten_out() 순서는 [1,2,3, 4,5,6]
+        let row0 = vec![
+            ScalarField::from_u32(1),
+            ScalarField::from_u32(2),
+            ScalarField::from_u32(3),
+        ];
+        let row1 = vec![
+            ScalarField::from_u32(4),
+            ScalarField::from_u32(5),
+            ScalarField::from_u32(6),
+        ];
+
+        // BivariatePolynomial 생성
+        let mut poly = BivariatePolynomial::new(vec![row0.clone(), row1.clone()]);
+
+        // check flatten_out before
+        let before = poly.flatten_out();
+        assert_eq!(
+            before,
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(4),
+                ScalarField::from_u32(5),
+                ScalarField::from_u32(6),
+            ],
+            "Initial flatten_out mismatch!"
+        );
+
+        // 빼고 싶은 element (예: 2)
+        let elem = ScalarField::from_u32(2);
+
+        // sub_by_field_element(2) 호출
+        poly.sub_by_field_element(elem);
+
+        // 기대 결과: 모든 항에서 2씩 빼므로
+        // row0 => [1-2, 2-2, 3-2] = [-1, 0, 1]
+        // row1 => [4-2, 5-2, 6-2] = [2, 3, 4]
+        // flatten_out => [-1,0,1, 2,3,4]
+        let after = poly.flatten_out();
+
+        // ScalarField에서 "정수 - 정수"는 모듈러 연산이므로,
+        // -1 이 곧 field 의 (p-1) 로 표현될 수 있음.
+        // 하지만 간단히 "from_u32(...)"로 매칭하면, 
+        //  -1 은 ScalarField::from_u64(MODULUS - 1) 과 동일해야 함.
+        // 여기서는 간단히 assert_ne!(0) 등으로만 확인하거나,
+        // debug로 눈으로 확인할 수도 있음.
+
+        // 예시로, 음수를 처리하기 귀찮으면,
+        //  -> 1 - 2 = -1 이 모듈러에서 어떤 값인지 직접 구해서 비교해야 합니다.
+        // 여기서는 "(-1) mod p = p-1" 식으로,
+        // ScalarField::from_u64(p-1) 와 비교해야 합니다.
+        // 다만, 짧은 테스트에선 "값이 0이 아님" 정도만 확인할 수도 있습니다.
+
+        let expected = vec![
+            // row0
+            ScalarField::from_u32(1) - elem, 
+            ScalarField::from_u32(2) - elem, 
+            ScalarField::from_u32(3) - elem,
+            // row1
+            ScalarField::from_u32(4) - elem,
+            ScalarField::from_u32(5) - elem,
+            ScalarField::from_u32(6) - elem,
+        ];
+
+        // 이제 after와 expected가 같은지 비교
+        assert_eq!(
+            after, 
+            expected,
+            "sub_by_field_element did not produce the expected result in bivariate poly!"
         );
     }
 }
