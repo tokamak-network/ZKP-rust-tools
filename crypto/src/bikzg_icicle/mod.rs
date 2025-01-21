@@ -16,25 +16,19 @@ impl BivariateKateZaveruchaGoldbergIcicle {
 
 #[cfg(test)]
 mod tests {
-    use crate::{bikzg::IsCommitmentScheme as _, bikzg_icicle::{
+    use crate::bikzg_icicle::{
         srs::StructuredReferenceString as SrsIcicle, BivariateKateZaveruchaGoldbergIcicle as BIKZG_Icicle
-    }};
+    };
     
     use icicle_bls12_381::curve::ScalarField;
     use icicle_core::traits::FieldImpl;
     use ndarray::array;
     use zkp_rust_tools_math::icicle_bipolynomial::BivariatePolynomial;
 
-    // use crate::bikzg::{
-    //     BivariateKateZaveruchaGoldberg,
-    //     utils::{icicle_scalar_to_lambdaworks, icicle_g1_to_lambdaworks, icicle_proof_to_tuple},
-    // };
-    // use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::pairing::BLS12381AtePairing;
 
     #[test]
     fn test_kzg() {        
-        let icicle_srs = SrsIcicle::create_srs(1, 1);
-        let bikzg_srs = icicle_srs.to_lambdaworks_srs();
+        let icicle_srs = SrsIcicle::create_srs(2, 2);
         let icicle_bikzg = BIKZG_Icicle::new(icicle_srs);
 
         let coeffs_2d = array![
@@ -48,13 +42,13 @@ mod tests {
         let poly = BivariatePolynomial::new(coeffs_vec);
         let p_commitment = icicle_bikzg.commit_bivariate(&poly);
 
-        let x = ScalarField::from_u32(1); // 1로 초기화
+        let x = ScalarField::from_u32(0); 
         let y = ScalarField::from_u32(10); // 10으로 초기화
         let evaluation = poly.evaluate(&x, &y);
 
         let proof = icicle_bikzg.open(&x, &y, &evaluation, &poly);
 
-        let is_valid = icicle_bikzg.verify(&x, &y, &evaluation, &p_commitment, &proof_tuple);
+        let is_valid = icicle_bikzg.verify(&x, &y, &evaluation, &p_commitment, &proof);
         println!("is_valid: {:?}", is_valid);
 
         assert!(is_valid, "bikzg verify should pass, but it failed.");

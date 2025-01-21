@@ -73,6 +73,7 @@ mod tests {
             [FrElement::from(1), FrElement::from(1)],
             [FrElement::from(1), FrElement::from(1)]
         ];
+        println!("srs: {:?}", bikzg.srs.powers_main_group.len());
         let bp = BivariatePolynomial::new(coefficients);
         // let (qxy, qy) = bp.ruffini_division(&-FieldElement::<FrField>::one(),& -FieldElement::<FrField>::one());
         let p_commitment: <BLS12381AtePairing as IsPairing>::G1Point = bikzg.commit_bivariate(&bp);
@@ -81,7 +82,6 @@ mod tests {
         let evaluation = bp.evaluate(&x, &y);
         let proof = bikzg.open(&x, &y, &evaluation,&bp);
         
-        println!("proof: {:?}", proof.0);
         assert!(bikzg.verify(&x, &y,&evaluation, &p_commitment, &proof));
     }
 

@@ -1,155 +1,117 @@
+// srs.rs
 use icicle_bls12_381::curve::{
-    CurveCfg, G1Affine, G1Projective, G2Affine, G2CurveCfg, ScalarField, G2Projective
+    G1Affine, G2Affine, ScalarField
 };
 use icicle_core::traits::Arithmetic;
-use icicle_core::traits::FieldImpl;
-use icicle_core::curve::Curve;
 use rand::Rng;
 
-use crate::bikzg::srs::StructuredReferenceString as BivariateSRS;
-use crate::bikzg::utils::{
-    icicle_g1_projective_to_lw,  // 기존 함수명
-    icicle_g2_projective_to_lw,  // 새로 만들었다고 가정
-};
+use lambdaworks_math::{elliptic_curve::{
+    short_weierstrass::curves::bls12_381::{
+            curve::BLS12381Curve, twist::BLS12381TwistCurve
+        }, traits::IsEllipticCurve
+}, traits::ByteConversion};
 
-use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::{
-        curve::BLS12381Curve, 
-        twist::BLS12381TwistCurve,
-    };
-// use lambdaworks_math::field::traits::IsField;
-use rayon::prelude::*;
+// Generator를 Icicle 타입으로 변환하는 새로운 함수들
+fn lambdaworks_g1_generator_to_icicle() -> G1Affine {
+    let g1_gen = BLS12381Curve::generator();
+    let coords = g1_gen.coordinates();
+    
+    // G1의 경우 단순 필드 요소로 구성
+    let x_bytes = coords[0].to_bytes_le();
+    let y_bytes = coords[1].to_bytes_le();
+    
+    let mut x_limbs = [0u32; 12];
+    let mut y_limbs = [0u32; 12];
+    
+    for (i, chunk) in x_bytes.chunks(4).enumerate() {
+        x_limbs[i] = u32::from_le_bytes(chunk.try_into().expect("Chunk size mismatch"));
+    }
+    
+    for (i, chunk) in y_bytes.chunks(4).enumerate() {
+        y_limbs[i] = u32::from_le_bytes(chunk.try_into().expect("Chunk size mismatch"));
+    }
+    
+    G1Affine::from_limbs(x_limbs, y_limbs)
+}
 
-use lambdaworks_math::elliptic_curve::short_weierstrass::point::ShortWeierstrassProjectivePoint;
+fn lambdaworks_g2_generator_to_icicle() -> G2Affine {
+    let g2_gen = BLS12381TwistCurve::generator();
+    let coords = g2_gen.coordinates();
+    
+    // G2의 경우 각 좌표가 2개의 기본 필드 요소로 구성
+    let x_fe_vec = coords[0].to_bytes_le();
+    let y_fe_vec = coords[1].to_bytes_le();
+    
+    let mut x_fe = [0u32; 24];
+    let mut y_fe = [0u32; 24];
+    
+    for (i, chunk) in x_fe_vec.chunks(4).enumerate() {
+        x_fe[i] = u32::from_le_bytes(chunk.try_into().expect("Chunk size mismatch"));
+    }
+    
+    for (i, chunk) in y_fe_vec.chunks(4).enumerate() {
+        y_fe[i] = u32::from_le_bytes(chunk.try_into().expect("Chunk size mismatch"));
+    }
+    
+    G2Affine::from_limbs(x_fe, y_fe)        
+}
 
-pub type G1Point = ShortWeierstrassProjectivePoint<BLS12381Curve>;
-pub type G2Point = ShortWeierstrassProjectivePoint<BLS12381TwistCurve>;
-
-/// Structured Reference String (SRS) 데이터 구조
 pub struct StructuredReferenceString {
     pub dimension_x: usize,
     pub dimension_y: usize,
-    /// We store G1 in **affine** form
     pub powers_main_group: Vec<G1Affine>,
-    /// We store just 3 G2 points in **affine** form
     pub powers_secondary_group: [G2Affine; 3],
 }
 
 impl StructuredReferenceString {
-    /// SRS 생성
-    /// - `dimension_x, dimension_y`: (x차, y차)에 맞춰 G1 점이 (x+1)*(y+1)개 필요
-    /// - 내부에서 tau, theta 를 랜덤으로 뽑는다.
     pub fn create_srs(
         dimension_x: usize,
         dimension_y: usize,
     ) -> Self {
-        // 1) tau, theta 랜덤 생성
         let mut rng = rand::thread_rng();
-        let tau_array: [u32; 8] = rng.gen();
-        let theta_array: [u32; 8] = rng.gen();
-        let tau = ScalarField::from(tau_array);
-        let theta = ScalarField::from(theta_array);
 
-        // 2) G1, G2용 임의 projective points를 생성
-        //    여기서는 "단 1개씩"만 생성해 base로 삼는다.
-        let g1_points = CurveCfg::generate_random_projective_points(1);
-        let g2_points = G2CurveCfg::generate_random_projective_points(1);
+        // 1. 랜덤 값 생성
+        let mut tau_bytes = [0u32; 8];
+        let mut theta_bytes = [0u32; 8];
+        for i in 0..8 {
+            tau_bytes[i] = rng.gen();
+            theta_bytes[i] = rng.gen();
+        }
+        let tau = ScalarField::from(tau_bytes);
+        let theta = ScalarField::from(theta_bytes);
 
-        // 3) (dimension_x+1)*(dimension_y+1)개의 G1 점을 만들자
-        //    G1_{i,j} = g1_points[0] * ( tau^j * theta^i )
-        let total_needed = (dimension_x + 1) * (dimension_y + 1);
+        // 2. Generator를 Icicle 타입으로 변환
+        let g1_base = lambdaworks_g1_generator_to_icicle().to_projective();
+        let g2_base = lambdaworks_g2_generator_to_icicle().to_projective();
+
+        // 3. G1 points 생성 - 크기 수정
+        let total_needed = dimension_x * dimension_y;  // inclusive range 제거
         let mut powers_main_group = Vec::with_capacity(total_needed);
 
-        // g1_points[0]가 projective 형태이므로, 여기에 (tau^j * theta^i) 곱해가며 만든다
-        let base_g1 = g1_points[0];
-
-        for i in 0..=dimension_y {
-            for j in 0..=dimension_x {
+        // 0부터 dimension-1까지만 순회
+        for i in 0..dimension_y {
+            for j in 0..dimension_x {
                 let exponent = tau.pow(j) * theta.pow(i);
-                let point_proj: G1Projective = base_g1 * exponent;
-                let point_aff: G1Affine = point_proj.into();
+                let point_proj = g1_base * exponent;
+                let point_aff = G1Affine::from(point_proj);
                 powers_main_group.push(point_aff);
             }
         }
 
-        // 4) G2에서 3개만 만들기: [base_g2, base_g2 * tau, base_g2 * theta]
-        let base_g2 = g2_points[0];
-        let g2_0 = base_g2;
-        let g2_1 = base_g2 * tau;
-        let g2_2 = base_g2 * theta;
-        let powers_secondary_group: [G2Affine; 3] = [
-            g2_0.into(),
-            g2_1.into(),
-            g2_2.into(),
+        // 4. G2 points 생성
+        let g2_points = [
+            G2Affine::from(g2_base),
+            G2Affine::from(g2_base * tau),
+            G2Affine::from(g2_base * theta),
         ];
 
         Self {
             dimension_x,
             dimension_y,
             powers_main_group,
-            powers_secondary_group,
+            powers_secondary_group: g2_points,
         }
     }
-
-    pub fn flatten_partitioned_g1_points(&self, x_len: usize, y_len: usize) -> Vec<G1Affine> {
-        let mut chunk_iter = self.powers_main_group.chunks(self.dimension_x + 1);
-        let mut output = Vec::new();
-
-        for _ in 0..y_len {
-            if let Some(chunk) = chunk_iter.next() {
-                output.extend(chunk.iter().take(x_len).cloned());
-            }
-        }
-        output
-    }
-
-    pub fn to_lambdaworks_srs(&self) -> BivariateSRS<G1Point, G2Point> {
-        // 1) G1Affine -> G1Projective -> lambdaworks
-        let g1_lw = self
-            .powers_main_group
-            .iter()
-            .map(|g1_affine| {
-                let proj: G1Projective = (*g1_affine).into();
-                icicle_g1_projective_to_lw(&proj).unwrap()
-            })
-            .collect();
-
-        // 2) G2Affine -> G2Projective -> lambdaworks
-        let g2_lw_vec: Vec<_> = self
-            .powers_secondary_group
-            .iter()
-            .map(|g2_affine| {
-                let proj: G2Projective = (*g2_affine).into();
-                icicle_g2_projective_to_lw(&proj).unwrap() // returns G1-based point?
-            })
-            .collect();
-        let g2_lw: [G2Point; 3] = g2_lw_vec.try_into().expect("Expected 3 elements");
-
-        BivariateSRS {
-            dimention_x: self.dimension_x,
-            dimention_y: self.dimension_y,
-            powers_main_group: g1_lw,
-            powers_secondary_group: g2_lw,
-        }
-    
-    }
-}
-
-/// 간단한 Vandermonde (필요하다면 그대로 유지하거나, 사용하지 않으면 지워도 됨)
-pub fn compute_vandemonde(bases: &[ScalarField], max_degree: usize) -> Vec<Vec<ScalarField>> {
-    let rows = max_degree + 1;
-    let cols = bases.len();
-
-    let mut table = vec![vec![ScalarField::one(); cols]; rows];
-
-    for j in 0..cols {
-        let base_j = bases[j];
-        let mut power = ScalarField::one();
-        for i in 0..rows {
-            table[i][j] = power;
-            power = power * base_j;
-        }
-    }
-    table
 }
 
 #[cfg(test)]
@@ -157,15 +119,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_srs_random_tau_theta() {
-        // 이제 create_srs 함수가 내부적으로 tau, theta를 뽑기 때문에
-        // 따로 tau를 입력하지 않아도 됨
+    fn test_create_srs() {
         let srs = StructuredReferenceString::create_srs(2, 2);
-
-        // G1 포인트 개수 = (2+1)*(2+1) = 9
-        assert_eq!(srs.powers_main_group.len(), 9);
-
-        // G2 포인트는 3개
+        assert_eq!(srs.powers_main_group.len(), 4);  // 2 x 2 = 4
         assert_eq!(srs.powers_secondary_group.len(), 3);
+    }
+
+    #[test]
+    fn test_various_dimensions() {
+        let srs1 = StructuredReferenceString::create_srs(2, 3);
+        assert_eq!(srs1.powers_main_group.len(), 6);  // 2 x 3 = 6
+
+        let srs2 = StructuredReferenceString::create_srs(3, 2);
+        assert_eq!(srs2.powers_main_group.len(), 6);  // 3 x 2 = 6
     }
 }
