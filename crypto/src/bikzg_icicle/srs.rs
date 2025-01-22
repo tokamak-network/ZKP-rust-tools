@@ -107,8 +107,6 @@ impl StructuredReferenceString {
         let mut chunk_iter = self.powers_main_group.chunks(self.dimension_x);
         let mut output: Vec<Affine<CurveCfg>> = vec![];
         for _ in 0..y_len{
-            // let dd = chunk_iter.next();
-            // dd.iter().take(x_len).cloned().collect();
             output.extend( chunk_iter.next().unwrap().iter().take(x_len).cloned());
         }
 
