@@ -101,8 +101,7 @@ pub fn create_srs(
     // Generate G1 and G2 generators
     let g1_generator = BLS12381Curve::generator();
     let g2_generator = BLS12381TwistCurve::generator();
-    println!("g1_generator: {:?}", g1_generator.to_affine());
-    println!("g2_generator: {:?}", g2_generator.to_affine());
+
     // Compute powers of tau and theta for G1 points
     let powers_of_tau_theta = compute_vandemonde(&tau, &theta, dims.0, dims.1);
 
@@ -127,7 +126,7 @@ pub fn create_srs(
         g2_generator.operate_with_self(tau.representative()),
         g2_generator.operate_with_self(theta.representative()),
     ];
-    println!("g1_points: {:?}", g1_points);
+    // println!("g1_points: {:?}", g1_points);
     // Return the structured reference string
     StructuredReferenceString::new(dims.0, dims.1, &g1_points, &g2_points)
 }

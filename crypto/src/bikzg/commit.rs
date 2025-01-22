@@ -33,7 +33,7 @@ impl<
 
         let g1_points = self.srs.flatten_partitioned_g1_points(poly.x_degree, poly.y_degree);
 
-        println!("commit_bivariate: coefficients: {:?}, {:?}", coefficients.len(), g1_points.len());
+        println!("commit_bivariate: coefficients: {:?}, {:?}", poly.x_degree, poly.y_degree);
         println!("coefficients: {:?}", coefficients);
 
         msm(&coefficients, &g1_points)
@@ -89,13 +89,18 @@ impl<
         p_commitment: &Self::Commitment,
         proofs: &(Self::Commitment, Self::Commitment),
     ) -> bool {
-        let g2: &<P as IsPairing>::G2Point = &self.srs.powers_secondary_group[0];
+        let g2 = &self.srs.powers_secondary_group[0];
         let tau_g2 = &self.srs.powers_secondary_group[1];
         let theta_g2 = &self.srs.powers_secondary_group[2];
 
+        // println!("g2: {:?}", g2);
+        // println!("tau_g2: {:?}", tau_g2); // tau_g2 does not implement Debug
+        // println!("evaluation: {:?}", evaluation.representative());
         println!("x: {:?}", x);
-        println!("y: {:?}", y.representative());
-        println!("evaluation: {:?}", evaluation.representative());
+        println!("y: {:?}", y);
+        println!("evaluation: {:?}", evaluation);
+        println!("");
+        println!("p_commitment: {:?}", p_commitment);
 
         let pairing_result = P::compute_batch(&[
             (
@@ -119,7 +124,8 @@ impl<
                 )),
             ),
         ]);
-
+        println!("");
+        println!("pairing_result: {:?}", pairing_result);
         pairing_result == Ok(FieldElement::one())
     }
 }
