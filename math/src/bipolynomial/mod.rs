@@ -159,7 +159,7 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
         F: IsSubFieldOf<L>,
     {
         // println!("a, b: {:?}, {:?}", a, b);
-        println!("self.coefficients: {:?}", self.coefficients);
+        // println!("self.coefficients: {:?}", self.coefficients);
          // Initialize a 2D array with the appropriate size filled with zeros
         let mut q_xy_coeffs = Array2::<FieldElement<L>>::default((self.y_degree, self.x_degree));
         let mut remainder_y = UnivariatePolynomial::zero();

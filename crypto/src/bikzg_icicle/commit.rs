@@ -22,7 +22,7 @@ impl BivariateKateZaveruchaGoldbergIcicle {
             .collect();
 
         let points = &self.srs.flatten_partitioned_g1_points_icicle(2, 2);
-
+        println!("lens: {:?}, {:?}", scalars.len(), points.len());
         assert_eq!(scalars.len(), points.len());
 
         let host_scalars = HostSlice::from_slice(&scalars);

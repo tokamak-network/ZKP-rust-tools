@@ -104,12 +104,13 @@ impl StructuredReferenceString {
     }
 
     pub fn flatten_partitioned_g1_points_icicle(&self, x_len: usize, y_len: usize) -> Vec<Affine<CurveCfg>> {
+        println!("powers_main_group: {:?}", self.powers_main_group);
         let mut chunk_iter = self.powers_main_group.chunks(self.dimension_x);
         let mut output: Vec<Affine<CurveCfg>> = vec![];
         for _ in 0..y_len{
             output.extend( chunk_iter.next().unwrap().iter().take(x_len).cloned());
         }
-
+        println!("output: {:?}", output);
         output
     }
 }
