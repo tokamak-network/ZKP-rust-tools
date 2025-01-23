@@ -5,13 +5,18 @@ This document provides an overview of the **`BivariatePolynomial`** structure an
 ---
 ## Overview
 
-We represent a bivariate polynomial \( p(x,y) \) of degrees \((d_x, d_y)\) by storing one **`DensePolynomial`** for each power of \(y\). Specifically:
+We represent a bivariate polynomial 
+<img src="https://latex.codecogs.com/svg.latex?p%28x%2Cy%29" title="p(x,y)" /> 
+of degrees 
+<img src="https://latex.codecogs.com/svg.latex?%5Cbigl%28d_x%2C%20d_y%5Cbigr%29" title="(d_x, d_y)" />
+by storing one `DensePolynomial` for each power of 
+<img src="https://latex.codecogs.com/svg.latex?y" title="y" />. Specifically:
 
-\[
-p(x,y) = \sum_{i=0}^{y\_degree} \bigl( \text{DensePolynomial in } x \bigr) \cdot y^i.
-\]
+<img src="https://latex.codecogs.com/svg.latex?p(x,y)&space;\;=\; \sum_{i=0}^{y\_degree} " title="p(x,y) \;=\; \sum_{i=0}^{y\_degree} }" />
+<img src="https://latex.codecogs.com/svg.latex?\Bigl(\text{DensePolynomial in } x\Bigr)\;\cdot\;y^i. " title="p(x,y) \;=\; \sum_{i=0}^{y\_degree} }" />
 
-This approach allows us to leverage existing operations for one-dimensional polynomials (`DensePolynomial`)—such as addition, subtraction, scalar multiplication—and extend them to two variables by stacking them row-by-row in terms of powers of \(y\).
+
+This approach allows us to leverage existing operations for one‐dimensional polynomials (`DensePolynomial`)—such as addition, subtraction, scalar multiplication—and extend them to two variables by stacking them row‐by‐row in terms of powers of \(y\).
 
 ---
 
@@ -51,6 +56,7 @@ impl Sub for BivariatePolynomial { ... }
 ## Test Suite
 
 Within the #[cfg(test)] module, there are several unit tests:
+
 	1.	test_bivariate_polynomial_new: Checks if constructing a polynomial using new stores the correct coefficients and degrees.
 	2.	test_evaluate: Evaluates a known polynomial at (x, y) = (2, 3) and compares against the expected numeric result.
 	3.	test_zero: Ensures BivariatePolynomial::zero() is indeed the zero polynomial.
