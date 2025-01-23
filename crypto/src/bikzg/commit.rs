@@ -32,9 +32,7 @@ impl<
             .collect();
 
         let g1_points = self.srs.flatten_partitioned_g1_points(poly.x_degree, poly.y_degree);
-        println!("points: {:?}", g1_points);
 
-        
         println!("coefficients: {:?}", coefficients);
 
         msm(&coefficients, &g1_points)

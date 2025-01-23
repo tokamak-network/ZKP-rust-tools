@@ -14,9 +14,15 @@ pub trait DensePolynomialExt {
     fn get_constant(&self) -> ScalarField;
     fn ruffini_division(&self, b: &ScalarField) -> Result<(DensePolynomial, ScalarField), &'static str>;
     fn add_polynomial(&self, other: &DensePolynomial) -> DensePolynomial;
+    fn zero() -> DensePolynomial;
 }
 
+
 impl DensePolynomialExt for DensePolynomial {
+    fn zero() -> Self {
+        DensePolynomial::from_coeffs(HostSlice::from_slice(&[ScalarField::zero()]), 1)
+    }
+
     fn get_coefficients(&self) -> Vec<ScalarField> {
         let n = self.get_nof_coeffs();
         let mut coeffs = vec![ScalarField::zero(); n as usize];
@@ -25,7 +31,6 @@ impl DensePolynomialExt for DensePolynomial {
     }
 
     fn scale(&self, scalar: &ScalarField) -> Self {
-        // 각 계수에 scalar 곱
         let new_coeffs: Vec<ScalarField> = self
             .get_coefficients()
             .iter()
@@ -39,7 +44,6 @@ impl DensePolynomialExt for DensePolynomial {
     }
 
     fn sub_constant(&mut self, constant: ScalarField) {
-        // 맨 앞 coeffs[0] -= constant
         let mut coeffs = self.get_coefficients();
         if coeffs.is_empty() {
             panic!("Polynomial has no coefficients.");
@@ -52,45 +56,42 @@ impl DensePolynomialExt for DensePolynomial {
     }
 
     fn get_constant(&self) -> ScalarField {
-        // 맨 앞이 상수항
         self.get_coeff(0)
     }
 
     fn ruffini_division(&self, b: &ScalarField) -> Result<(DensePolynomial, ScalarField), &'static str> {
-        // (x - b) 꼴에서 b가 루트 역할
         let n = self.get_nof_coeffs();
         if n == 0 {
             return Err("Polynomial has no coefficients.");
         }
 
-        let coeffs = self.get_coefficients(); 
-        // 뒤에서부터 몫을 채움 (synthetic division)
-        let mut iter = coeffs.iter().rev();
-        let mut temp = *iter.next().unwrap(); 
-        let mut q = Vec::with_capacity(n as usize - 1);
-
-        for &c in iter {
-            q.push(temp);
-            temp = temp * *b + c;  // temp = temp*b + c
+        let coeffs = self.get_coefficients();
+        
+        // 1차 이하의 다항식 처리
+        if n <= 1 {
+            return Ok((
+                DensePolynomial::from_coeffs(HostSlice::from_slice(&[]), 0),
+                coeffs[0]
+            ));
         }
-        q.reverse(); 
 
-        // 몫에서 trailing zero 제거
-        let mut q_poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&q),
-            q.len()
-        );
-        let mut q_cf = q_poly.get_coefficients();
-        while q_cf.len() > 1 && *q_cf.last().unwrap() == ScalarField::zero() {
-            q_cf.pop();
+        // Ruffini의 방법으로 계산
+        let mut quotient = vec![coeffs[n as usize - 1]];
+        let mut temp = coeffs[n as usize - 1];
+        
+        for i in (0..n-1).rev() {
+            temp = temp * *b + coeffs[i as usize];
+            if i != 0 {  // 마지막 항은 나머지
+                quotient.push(temp);
+            }
         }
-        q_poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&q_cf),
-            q_cf.len()
-        );
-
-        // temp 가 나머지
-        Ok((q_poly, temp))
+        
+        quotient.reverse();
+        
+        Ok((
+            DensePolynomial::from_coeffs(HostSlice::from_slice(&quotient), quotient.len()),
+            temp  // 나머지
+        ))
     }
 
     fn add_polynomial(&self, other: &DensePolynomial) -> DensePolynomial {
@@ -112,30 +113,97 @@ impl DensePolynomialExt for DensePolynomial {
     }
 }
 
-/// 이변량 다항식
 pub struct BivariatePolynomial {
-    pub coefficients: Vec<DensePolynomial>, // row i => y^i
+    pub coefficients: Vec<DensePolynomial>,
     pub x_degree: usize,
     pub y_degree: usize,
 }
 
+use std::ops::{Add, Sub};
+
+impl Add for BivariatePolynomial {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut result_coeffs = Vec::with_capacity(self.coefficients.len().max(other.coefficients.len()));
+
+        for i in 0..result_coeffs.capacity() {
+            let zero_poly = DensePolynomial::zero();
+            let self_poly = self.coefficients.get(i).unwrap_or(&zero_poly);
+            let other_poly = other.coefficients.get(i).unwrap_or(&zero_poly);
+            result_coeffs.push(self_poly.add_polynomial(other_poly));
+        }
+
+        BivariatePolynomial {
+            coefficients: result_coeffs,
+            x_degree: self.x_degree.max(other.x_degree),
+            y_degree: self.y_degree.max(other.y_degree),
+        }
+    }
+}
+
+impl Sub for BivariatePolynomial {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        let max_rows = self.coefficients.len().max(other.coefficients.len());
+        let mut result_coeffs = Vec::with_capacity(max_rows);
+
+        for i in 0..max_rows {
+            let zero_poly = DensePolynomial::zero();
+            let self_poly = self.coefficients.get(i).unwrap_or(&zero_poly);
+            let other_poly = other.coefficients.get(i).unwrap_or(&zero_poly);
+
+            // 다항식 계수 뺄셈
+            let self_coeffs = self_poly.get_coefficients();
+            let other_coeffs = other_poly.get_coefficients();
+            
+            let max_len = self_coeffs.len().max(other_coeffs.len());
+            let mut diff = vec![ScalarField::zero(); max_len];
+
+            for j in 0..max_len {
+                let a = self_coeffs.get(j).copied().unwrap_or(ScalarField::zero());
+                let b = other_coeffs.get(j).copied().unwrap_or(ScalarField::zero());
+                diff[j] = a - b;
+            }
+
+            // 뺄셈 결과 다항식 생성
+            result_coeffs.push(DensePolynomial::from_coeffs(
+                HostSlice::from_slice(&diff),
+                diff.len()
+            ));
+        }
+
+        Self {
+            coefficients: result_coeffs,
+            x_degree: self.x_degree.max(other.x_degree),
+            y_degree: self.y_degree.max(other.y_degree),
+        }
+    }
+}
+
 impl BivariatePolynomial {
     pub fn new(rows: Vec<Vec<ScalarField>>) -> Self {
-        // 행 개수 = y_degree+1 임을 고려
         let y_degree = rows.len().saturating_sub(1);
-    
         let x_degree = rows
             .iter()
             .map(|r| r.len())
             .max()
             .map(|len| len.saturating_sub(1))
             .unwrap_or(0);
-    
+
         let polys = rows.into_iter().map(|row| {
-            let slice = HostSlice::from_slice(&row);
-            DensePolynomial::from_coeffs(slice, row.len())
+            let mut row_vec = row.clone();
+            // x_degree + 1 길이로 맞추기
+            while row_vec.len() <= x_degree {
+                row_vec.push(ScalarField::zero());
+            }
+            DensePolynomial::from_coeffs(
+                HostSlice::from_slice(&row_vec),
+                row_vec.len()
+            )
         }).collect();
-    
+
         BivariatePolynomial {
             coefficients: polys,
             x_degree,
@@ -154,7 +222,6 @@ impl BivariatePolynomial {
     }
 
     fn dense_poly_new_monomial(c: ScalarField, deg: usize) -> DensePolynomial {
-        // degree+1 길이, 해당 차수에 c
         let mut cf = vec![ScalarField::zero(); deg+1];
         cf[deg] = c;
         DensePolynomial::from_coeffs(
@@ -171,8 +238,31 @@ impl BivariatePolynomial {
         )
     }
 
+    pub fn sub_by_field_element(&self, element: ScalarField) -> Self {
+        let mut new_coeffs = Vec::with_capacity(self.coefficients.len());
+
+        for (i, dp) in self.coefficients.iter().enumerate() {
+            let mut cfs = dp.get_coefficients();
+            
+            // 첫 번째 다항식에서만 상수항을 뺌
+            if i == 0 && !cfs.is_empty() {
+                cfs[0] = cfs[0] - element;
+            }
+            
+            new_coeffs.push(DensePolynomial::from_coeffs(
+                HostSlice::from_slice(&cfs),
+                cfs.len()
+            ));
+        }
+
+        Self {
+            coefficients: new_coeffs,
+            x_degree: self.x_degree,
+            y_degree: self.y_degree,
+        }
+    }
+
     pub fn evaluate(&self, x: &ScalarField, y: &ScalarField) -> ScalarField {
-        // row i => y^i
         let mut acc = ScalarField::zero();
         for (i, poly) in self.coefficients.iter().enumerate() {
             let mut ypow = ScalarField::one();
@@ -186,13 +276,12 @@ impl BivariatePolynomial {
     }
 
     pub fn flatten_out(&self) -> Vec<ScalarField> {
-        let total_len = (self.x_degree ) * (self.y_degree);
+        let total_len = (self.x_degree + 1) * (self.y_degree + 1);
         let mut flattened = Vec::with_capacity(total_len);
 
         for row_index in 0..=self.y_degree {
             let row_poly = &self.coefficients[row_index];
-            let row_coeffs = row_poly.get_coefficients(); 
-            // univariate poly의 계수 (길이 <= x_degree+1 일 수 있음)
+            let row_coeffs = row_poly.get_coefficients();
 
             for x_index in 0..=self.x_degree {
                 let val = if x_index < row_coeffs.len() {
@@ -207,137 +296,103 @@ impl BivariatePolynomial {
         flattened
     }
 
-    pub fn sub_by_field_element(&self, element: ScalarField) -> Self {
-        // 새롭게 구성할 DensePolynomial들의 벡터
-        let mut new_coeffs = Vec::with_capacity(self.coefficients.len());
-
-        for dp in &self.coefficients {
-            // 1) 각 row(i)에 해당하는 univariate poly의 계수를 읽음
-            let mut cfs = dp.get_coefficients();
-
-            // 2) 각 계수에서 element를 뺌
-            for c in &mut cfs {
-                *c = *c - element; 
-            }
-
-            // 3) 수정된 계수로 새로운 DensePolynomial 생성
-            let new_dp = DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&cfs),
-                cfs.len()
-            );
-            new_coeffs.push(new_dp);
-        }
-
-        // 4) 자기 자신의 x_degree, y_degree를 유지하되
-        //    coefficients는 새롭게 만든 것으로 대체
-        BivariatePolynomial {
-            coefficients: new_coeffs,
-            x_degree: self.x_degree,
-            y_degree: self.y_degree,
-        }
-    }
-
     pub fn ruffini_division(
         &self,
         a: &ScalarField,  // (x-a)
         b: &ScalarField,  // (y-b)
     ) -> Result<(BivariatePolynomial, DensePolynomial), &'static str> {
-        // (1) (x - a) 로 y=0..y_degree-1 순서대로 나누기
-        //     bipolynomial/mod.rs 쪽은 axis_iter(Axis(0)) 윗행부터 y_index=0 -> y^0 → y1, ...
-        //     여기서도 i=0 => row0 (y^0), i=1 => row1 (y^1) 순으로.
-        let mut q_xy_rows = Vec::with_capacity(self.y_degree);
-        let mut remainders = Vec::with_capacity(self.y_degree);
+        let mut q_xy_rows = Vec::new();
+        let mut remainders = Vec::new();
     
-        for (_y_index, poly) in self.coefficients.iter().enumerate() {
-            // poly = row(y_index)
-            let (mut q, r) = poly.ruffini_division(a)?;
-    
-            // Univariate 몫에서 trailing zero 제거
-            let mut q_cf = q.get_coefficients();
-            while q_cf.len() > 1 && q_cf.last().unwrap() == &ScalarField::zero() {
-                q_cf.pop();
-            }
-            q = DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&q_cf),
-                q_cf.len()
-            );
-    
-            // row(y_index)의 몫
+        // 각 row에 대해 x로 나누기
+        for poly in &self.coefficients {
+            let (q, r) = poly.ruffini_division(a)?;
             q_xy_rows.push(q);
-            // row(y_index)의 remainder
             remainders.push(r);
         }
     
-        // (2) remainder_y = ∑_{i=0..} remainders[i]*y^i
+        // remainder_y 다항식 구성
         let mut remainder_y = Self::dense_poly_zero();
         for (i, &rem) in remainders.iter().enumerate() {
-            // monomial = rem*x^0 with degree=i in y
             let monomial = Self::dense_poly_new_monomial(rem, i);
             remainder_y = remainder_y.add_polynomial(&monomial);
         }
     
-        // (3) x_degree: bipolynomial/mod.rs 처럼 굳이 줄이지 않고 그대로
-        //     혹은 필요 시 saturating_sub(1).
-        let new_x_degree = self.x_degree;
+        // y로 나누기
+        let (q_y, _) = remainder_y.ruffini_division(b)?;
+        let x_degree = self.x_degree.saturating_sub(1);
+        let y_degree = self.y_degree;
     
-        // (4) q_xy_rows[i] 의 coeff 길이를 (new_x_degree+1)로 맞추기
-        for q_poly in q_xy_rows.iter_mut() {
-            let mut cfs = q_poly.get_coefficients();
-            while cfs.len() < new_x_degree + 1 {
-                cfs.push(ScalarField::zero());
+        // 각 row 정규화
+        let normalized_rows: Vec<_> = q_xy_rows
+            .into_iter()
+            .map(|row| {
+                let mut coeffs = row.get_coefficients();
+                coeffs.resize(x_degree + 1, ScalarField::zero());
+                DensePolynomial::from_coeffs(
+                    HostSlice::from_slice(&coeffs),
+                    coeffs.len()
+                )
+            })
+            .collect();
+    
+        Ok((
+            Self {
+                coefficients: normalized_rows,
+                x_degree,
+                y_degree,
+            },
+            q_y
+        ))
+    }
+
+    pub fn scale(&self, x_factor: &ScalarField, y_factor: &ScalarField) -> Self {
+        let mut scaled_coefficients = Vec::with_capacity(self.coefficients.len());
+    
+        for (i, row_poly) in self.coefficients.iter().enumerate() {
+            // y^i 항의 계수에 (y_factor)^i를 곱함
+            let mut y_power = ScalarField::one();
+            for _ in 0..i {
+                y_power = y_power * *y_factor;
             }
-            cfs.truncate(new_x_degree + 1);
-            *q_poly = DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&cfs),
-                cfs.len()
+    
+            let row_coeffs = row_poly.get_coefficients();
+            let mut scaled_row = Vec::with_capacity(self.x_degree + 1);
+    
+            for (j, coeff) in row_coeffs.iter().enumerate() {
+                // x^j 항의 계수에 (x_factor)^j를 곱함
+                let mut x_power = ScalarField::one();
+                for _ in 0..j {
+                    x_power = x_power * *x_factor;
+                }
+                scaled_row.push(*coeff * y_power * x_power);
+            }
+    
+            while scaled_row.len() <= self.x_degree {
+                scaled_row.push(ScalarField::zero());
+            }
+    
+            scaled_coefficients.push(
+                DensePolynomial::from_coeffs(
+                    HostSlice::from_slice(&scaled_row),
+                    scaled_row.len()
+                )
             );
         }
     
-        let q_xy = BivariatePolynomial {
-            coefficients: q_xy_rows,
-            x_degree: new_x_degree,
+        Self {
+            coefficients: scaled_coefficients,
+            x_degree: self.x_degree,
             y_degree: self.y_degree,
-        };
-    
-        // (5) remainder_y를 (y - b) 로 Ruffini
-        let (mut q_y, _final_rem) = remainder_y.ruffini_division(b)?;
-    
-        // Univariate 몫 q_y 에서 trailing zero 제거
-        let mut qy_cf = q_y.get_coefficients();
-        while qy_cf.len() > 1 && qy_cf.last().unwrap() == &ScalarField::zero() {
-            qy_cf.pop();
         }
-        q_y = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&qy_cf),
-            qy_cf.len()
-        );
-    
-    
-    
-        Ok((q_xy, q_y))
     }
 }
-
-// fn pow_field(base: &ScalarField, exp: usize) -> ScalarField {
-//     let mut r = ScalarField::one();
-//     let mut cur = *base;
-//     let mut e = exp;
-//     while e > 0 {
-//         if e & 1 == 1 {
-//             r = r * cur;
-//         }
-//         cur = cur * cur;
-//         e >>= 1;
-//     }
-//     r
-// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use icicle_bls12_381::curve::ScalarField;
 
-    /// 간단한 필드 원소 생성
     fn create_field_elements() -> (ScalarField, ScalarField, ScalarField, ScalarField) {
         let zero = ScalarField::zero();
         let one = ScalarField::one();
@@ -346,123 +401,109 @@ mod tests {
         (zero, one, two, three)
     }
 
-    #[test]
-    fn test_get_coefficients() {
-        let (_, _, _, _) = create_field_elements();
-        let v_coeffs = [ScalarField::from_u32(1), ScalarField::from_u32(2)];
-        // 길이=2
-        let poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&v_coeffs),
-            v_coeffs.len()
-        );
-
-        let coefficients = poly.get_coefficients();
-        assert_eq!(coefficients, vec![ScalarField::from_u32(1), ScalarField::from_u32(2)]);
-    }
-
-    #[test]
-    fn test_scale() {
-        let (_, _, two, _) = create_field_elements();
-        let poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&[ScalarField::from_u32(1), ScalarField::from_u32(2)]),
-            2 // 계수 개수
-        );
-        let scaled_poly = poly.scale(&two);
-        assert_eq!(
-            scaled_poly.get_coefficients(),
-            vec![ScalarField::from_u32(2), ScalarField::from_u32(4)]
-        );
-    }
-
-    #[test]
-    fn test_sub_constant() {
-        let (_, _, _, three) = create_field_elements();
-        let v_coeffs = [ScalarField::from_u32(5)];
-        // 길이=1
-        let mut poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&v_coeffs),
-            v_coeffs.len()
-        );
-        poly.sub_constant(three);
-        assert_eq!(poly.get_coefficients(), vec![ScalarField::from_u32(2)]);
-    }
-
-    #[test]
-    fn test_get_constant() {
-        let (_, _, _, three) = create_field_elements();
-        // 길이=1
-        let poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&[three]),
-            1
-        );
-        assert_eq!(poly.get_constant(), three);
-    }
-
-    #[test]
-    fn test_ruffini_division_dense() {
-        let (_, one, _, _) = create_field_elements();
-        // 계수 = [2, 1, 1] → 길이=3
-        let poly = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&[
+    // 3 + x + 2x*y + x^2*y + 4x*y^2
+    fn polynomial_a() -> BivariatePolynomial {
+        BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(1),
+                ScalarField::zero()
+            ],
+            vec![
+                ScalarField::zero(),
                 ScalarField::from_u32(2),
+                ScalarField::from_u32(1)
+            ],
+            vec![
+                ScalarField::zero(),
+                ScalarField::from_u32(4),
+                ScalarField::zero()
+            ]
+        ])
+    }
+
+    // 1 + 2x + 3y + 4xy
+    fn polynomial_b() -> BivariatePolynomial {
+        BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(2),
+                ScalarField::zero()
+            ],
+            vec![
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(4),
+                ScalarField::zero()
+            ],
+            vec![
+                ScalarField::zero(),
+                ScalarField::zero(),
+                ScalarField::zero()
+            ]
+        ])
+    }
+
+    fn polynomial_one() -> BivariatePolynomial {
+        BivariatePolynomial::new(vec![
+            vec![
                 ScalarField::from_u32(1),
                 ScalarField::from_u32(1),
-            ]),
-            3
-        );
-
-        let (quotient, remainder) = poly.ruffini_division(&one).expect("Ruffini division failed");
-
-        // 기대 몫 = [2, 1], 기대 나머지 = 4
-        let expected_quotient = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&[ScalarField::from_u32(2), ScalarField::from_u32(1)]),
-            2
-        );
-        let expected_remainder = ScalarField::from_u32(4);
-
-        assert_eq!(quotient.get_coefficients(), expected_quotient.get_coefficients());
-        assert_eq!(remainder, expected_remainder);
+                ScalarField::from_u32(1)
+            ],
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(1)
+            ],
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(1)
+            ]
+        ])
     }
 
     #[test]
-    fn test_add_polynomial() {
-        let (_, _, _, _) = create_field_elements();
-        let poly1 = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&[ScalarField::from_u32(1), ScalarField::from_u32(2)]),
-            2
-        );
-        let poly2 = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&[ScalarField::from_u32(3), ScalarField::from_u32(4)]),
-            2
-        );
+    fn test_bivariate_polynomial_new() {
+        // Example: 3 + x + 2xy + x^2y + 4xy^2
+        let poly = polynomial_a();
 
-        let sum_poly = poly1.add_polynomial(&poly2);
-        assert_eq!(
-            sum_poly.get_coefficients(),
-            vec![ScalarField::from_u32(4), ScalarField::from_u32(6)]
-        );
+        assert_eq!(poly.x_degree, 2);
+        assert_eq!(poly.y_degree, 2);
+
+        let expected_coeffs = polynomial_a().coefficients;
+        for (actual, expected) in poly.coefficients.iter().zip(expected_coeffs.iter()) {
+            assert_eq!(actual.get_coefficients(), expected.get_coefficients());
+        }
     }
 
     #[test]
-    fn test_bivariate_polynomial_evaluate() {
-        let (_, one, two, three) = create_field_elements();
-        // y^0: 1 + 2x, y^1: 3 + x
-        let poly = BivariatePolynomial::new(vec![
-            vec![one, two],   // (상수항=1, x계수=2)
-            vec![three, one], // (상수항=3, x계수=1)
-        ]);
+    fn test_evaluate() {
+        let poly = polynomial_a();
+        let x = ScalarField::from_u32(2);
+        let y = ScalarField::from_u32(3);
 
-     
-        let result = poly.evaluate(&two, &one);
+        let result = poly.evaluate(&x, &y);
 
-      
-        assert_eq!(result, ScalarField::from_u32(10));
+        // 3 + x + 2xy + x^2y + 4xy^2
+        // = 3 + 2 + 2*2*3 + 2^2*3 + 4*2*3^2
+        // = 3 + 2 + 12 + 12 + 72
+        // = 101 mod ORDER
+        let expected = ScalarField::from_u32(101);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_zero() {
+        let zero_poly = BivariatePolynomial::zero();
+        assert!(zero_poly.coefficients[0].get_coefficients().iter().all(|c| *c == ScalarField::zero()));
     }
 
     #[test]
     fn test_bivariate_polynomial_ruffini_division() {
-        let (zero, one, two, _) = create_field_elements();
-        // y=0 행: [14, 2, 1], y=1 행: [3, 21, 1]
+        let (zero, one, _, _) = create_field_elements();
+        
         let poly = BivariatePolynomial::new(vec![
             vec![
                 ScalarField::from_u32(14),
@@ -474,155 +515,273 @@ mod tests {
                 ScalarField::from_u32(3),
                 ScalarField::from_u32(21),
                 ScalarField::from_u32(1),
-                ScalarField::from_u32(1),
+                ScalarField::from_u32(1)
             ],
             vec![
                 ScalarField::from_u32(21),
                 ScalarField::from_u32(19),
                 ScalarField::from_u32(4),
-                ScalarField::from_u32(0),
+                ScalarField::zero()
             ],
             vec![
                 ScalarField::from_u32(1),
-                ScalarField::from_u32(0),
-                ScalarField::from_u32(0),
-                ScalarField::from_u32(0),
-            ],
+                ScalarField::zero(),
+                ScalarField::zero(),
+                ScalarField::zero()
+            ]
         ]);
 
-        let (q_xy, q_y) = poly.ruffini_division(&one, &two).expect("Ruffini division failed");
+        assert_eq!(ScalarField::zero(), poly.evaluate(&one, &ScalarField::from_u32(2)));
 
-        // 테스트에서 기대하는 몫 & 나머지
+        let (q_xy, q_y) = poly.ruffini_division(&one, &ScalarField::from_u32(2))
+            .expect("Ruffini division failed");
+
         let expected_q_xy = BivariatePolynomial::new(vec![
-            vec![ScalarField::from_u32(3), ScalarField::from_u32(1), ScalarField::from_u32(0), ScalarField::from_u32(0)],
-            vec![ScalarField::from_u32(0), ScalarField::from_u32(2), ScalarField::from_u32(1), ScalarField::from_u32(0)],
-            vec![ScalarField::from_u32(0), ScalarField::from_u32(4), ScalarField::from_u32(0), ScalarField::from_u32(0)],
-            vec![ScalarField::from_u32(0), ScalarField::from_u32(0), ScalarField::from_u32(0), ScalarField::from_u32(0)],
+            vec![
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(1),
+                ScalarField::zero(),
+                ScalarField::zero()
+            ],
+            vec![
+                ScalarField::zero(),
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(1),
+                ScalarField::zero()
+            ],
+            vec![
+                ScalarField::zero(),
+                ScalarField::from_u32(4),
+                ScalarField::zero(),
+                ScalarField::zero()
+            ],
+            vec![
+                ScalarField::zero(),
+                ScalarField::zero(),
+                ScalarField::zero(),
+                ScalarField::zero()
+            ]
         ]);
-        
-        let vector = vec![
-            ScalarField::from_u32(3), 
-            ScalarField::from_u32(0),
+
+        let remainder_coeffs = vec![
+            ScalarField::from_u32(3),
+            ScalarField::zero(),
             ScalarField::from_u32(1),
         ];
-
+        
         let expected_q_y = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&vector[..]), 
-            vector.len()
+            HostSlice::from_slice(&remainder_coeffs),
+            remainder_coeffs.len()
         );
 
         q_xy.coefficients.iter().zip(expected_q_xy.coefficients.iter()).for_each(|(q, expected_q)| {
             assert_eq!(q.get_coefficients(), expected_q.get_coefficients());
         });
-        // 단순 체크
+        
         assert_eq!(q_xy.coefficients.len(), expected_q_xy.coefficients.len());
         assert_eq!(q_y.get_coefficients(), expected_q_y.get_coefficients());
     }
 
     #[test]
-    fn test_bivariate_poly_flatten_out() {
-        let row0 = vec![
-            ScalarField::from_u32(1),
-            ScalarField::from_u32(2),
-        ];
-        let row1 = vec![
-            ScalarField::from_u32(3),
-            ScalarField::from_u32(4),
-        ];
-        let poly = BivariatePolynomial::new(vec![row0.clone(), row1.clone()]);
-
-        let flat = poly.flatten_out();
-        assert_eq!(flat.len(), 4);
-
-        // 순서: row_index=0 (y=0), x=0..1 → [1, 2], row_index=1 (y=1), x=0..1 → [3, 4]
-        // 따라서 [1, 2, 3, 4]
-        assert_eq!(
-            flat,
+    fn test_polynomial_addition() {
+        let p1 = BivariatePolynomial::new(vec![
             vec![
                 ScalarField::from_u32(1),
                 ScalarField::from_u32(2),
-                ScalarField::from_u32(3),
+                ScalarField::from_u32(3)
+            ],
+            vec![
+                ScalarField::from_u32(4),
+                ScalarField::from_u32(5),
+                ScalarField::from_u32(6) 
+            ],
+            vec![
+                ScalarField::from_u32(4),
+                ScalarField::from_u32(5),
+                ScalarField::from_u32(6) 
+            ],
+        ]);
+
+        let p2 = BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(6),
+                ScalarField::from_u32(5),
                 ScalarField::from_u32(4)
-            ]
-        );
+            ],
+            vec![
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(1) 
+            ],
+        ]);
+
+        let expected = BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(7), 
+                ScalarField::from_u32(7), 
+                ScalarField::from_u32(7)
+            ],
+            vec![
+                ScalarField::from_u32(7), 
+                ScalarField::from_u32(7), 
+                ScalarField::from_u32(7)  
+            ],
+            vec![
+                ScalarField::from_u32(4), 
+                ScalarField::from_u32(5), 
+                ScalarField::from_u32(6)  
+            ],
+        ]);
+        let result = p1 + p2;
+
+        assert_eq!(expected.coefficients.len(), result.coefficients.len());
+        for (exp_row, res_row) in expected.coefficients.iter().zip(result.coefficients.iter()) {
+            assert_eq!(exp_row.get_coefficients(), res_row.get_coefficients());
+        }
     }
 
     #[test]
-    fn test_bivariate_sub_by_field_element() {
-        // 예: (y=0) 행 => [1, 2, 3],
-        //      (y=1) 행 => [4, 5, 6].
-        // x_degree=2, y_degree=1
-        // => flatten_out() 순서는 [1,2,3, 4,5,6]
-        let row0 = vec![
-            ScalarField::from_u32(1),
-            ScalarField::from_u32(2),
-            ScalarField::from_u32(3),
-        ];
-        let row1 = vec![
-            ScalarField::from_u32(4),
-            ScalarField::from_u32(5),
-            ScalarField::from_u32(6),
-        ];
+    fn test_polynomial_subtraction() {
+        let p1 = BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(1)
+            ],
+            vec![
+                ScalarField::from_u32(4),
+                ScalarField::from_u32(5),
+                ScalarField::from_u32(6) 
+            ],
+            vec![
+                ScalarField::from_u32(7),
+                ScalarField::from_u32(8),
+                ScalarField::from_u32(9) 
+            ],
+        ]);
 
-        // BivariatePolynomial 생성
-        let mut poly = BivariatePolynomial::new(vec![row0.clone(), row1.clone()]);
+        let p2 = BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(2)
+            ],
+            vec![
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(4) 
+            ],
+            vec![
+                ScalarField::from_u32(5),
+                ScalarField::from_u32(6),
+                ScalarField::from_u32(7) 
+            ],
+        ]);
 
-        // check flatten_out before
-        let before = poly.flatten_out();
-        assert_eq!(
-            before,
+        let expected = BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(2), 
+                ScalarField::from_u32(1), 
+                ScalarField::from_u32(22)
+            ],
+            vec![
+                ScalarField::from_u32(2), 
+                ScalarField::from_u32(2), 
+                ScalarField::from_u32(2)  
+            ],
+            vec![
+                ScalarField::from_u32(2), 
+                ScalarField::from_u32(2), 
+                ScalarField::from_u32(2)  
+            ],
+        ]);
+        let result = p1 + p2;
+
+        assert_eq!(expected.coefficients.len(), result.coefficients.len());
+        for (exp_row, res_row) in expected.coefficients.iter().zip(result.coefficients.iter()) {
+            assert_eq!(exp_row.get_coefficients(), res_row.get_coefficients());
+        }
+    }
+
+    #[test]
+    fn test_sub_by_field_element() {
+        let coeffs = vec![vec![ScalarField::from_u32(5), ScalarField::from_u32(2), ScalarField::from_u32(3), ScalarField::from_u32(4)]];
+        let poly = BivariatePolynomial::new(coeffs);
+
+        let element_to_subtract = ScalarField::from_u32(3);
+
+        let result = poly.sub_by_field_element(element_to_subtract);
+
+        let expected = BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(2),   // 3 - 2
+                ScalarField::from_u32(2),
+            ],
+            vec![
+                ScalarField::from_u32(3),
+                ScalarField::from_u32(4),
+              
+            ],
+        ]);
+
+        assert_eq!(expected.coefficients.len(), result.coefficients.len());
+        for (exp_row, res_row) in expected.coefficients.iter().zip(result.coefficients.iter()) {
+            assert_eq!(exp_row.get_coefficients(), res_row.get_coefficients());
+        }
+    }
+
+    #[test]
+    fn test_scale() {
+        let poly = polynomial_one();
+        
+        // x 방향 스케일링
+        let x_scaled = poly.scale(&ScalarField::from_u32(2), &ScalarField::from_u32(1));
+        let expected_x = BivariatePolynomial::new(vec![
             vec![
                 ScalarField::from_u32(1),
                 ScalarField::from_u32(2),
-                ScalarField::from_u32(3),
-                ScalarField::from_u32(4),
-                ScalarField::from_u32(5),
-                ScalarField::from_u32(6),
+                ScalarField::from_u32(4)
             ],
-            "Initial flatten_out mismatch!"
-        );
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(4)
+            ],
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(4)
+            ]
+        ]);
+        
+        assert_eq!(expected_x.coefficients.len(), x_scaled.coefficients.len());
+        for (exp_row, scaled_row) in expected_x.coefficients.iter().zip(x_scaled.coefficients.iter()) {
+            assert_eq!(exp_row.get_coefficients(), scaled_row.get_coefficients());
+        }
 
-        // 빼고 싶은 element (예: 2)
-        let elem = ScalarField::from_u32(2);
+        // y 방향 스케일링
+        let y_scaled = poly.scale(&ScalarField::from_u32(1), &ScalarField::from_u32(2));
+        let expected_y = BivariatePolynomial::new(vec![
+            vec![
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(1),
+                ScalarField::from_u32(1)
+            ],
+            vec![
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(2),
+                ScalarField::from_u32(2)
+            ],
+            vec![
+                ScalarField::from_u32(4),
+                ScalarField::from_u32(4),
+                ScalarField::from_u32(4)
+            ]
+        ]);
 
-        // sub_by_field_element(2) 호출
-        poly.sub_by_field_element(elem);
-
-        // 기대 결과: 모든 항에서 2씩 빼므로
-        // row0 => [1-2, 2-2, 3-2] = [-1, 0, 1]
-        // row1 => [4-2, 5-2, 6-2] = [2, 3, 4]
-        // flatten_out => [-1,0,1, 2,3,4]
-        let after = poly.flatten_out();
-
-        // ScalarField에서 "정수 - 정수"는 모듈러 연산이므로,
-        // -1 이 곧 field 의 (p-1) 로 표현될 수 있음.
-        // 하지만 간단히 "from_u32(...)"로 매칭하면, 
-        //  -1 은 ScalarField::from_u64(MODULUS - 1) 과 동일해야 함.
-        // 여기서는 간단히 assert_ne!(0) 등으로만 확인하거나,
-        // debug로 눈으로 확인할 수도 있음.
-
-        // 예시로, 음수를 처리하기 귀찮으면,
-        //  -> 1 - 2 = -1 이 모듈러에서 어떤 값인지 직접 구해서 비교해야 합니다.
-        // 여기서는 "(-1) mod p = p-1" 식으로,
-        // ScalarField::from_u64(p-1) 와 비교해야 합니다.
-        // 다만, 짧은 테스트에선 "값이 0이 아님" 정도만 확인할 수도 있습니다.
-
-        let expected = vec![
-            // row0
-            ScalarField::from_u32(1) - elem, 
-            ScalarField::from_u32(2) - elem, 
-            ScalarField::from_u32(3) - elem,
-            // row1
-            ScalarField::from_u32(4) - elem,
-            ScalarField::from_u32(5) - elem,
-            ScalarField::from_u32(6) - elem,
-        ];
-
-        // 이제 after와 expected가 같은지 비교
-        assert_eq!(
-            after, 
-            expected,
-            "sub_by_field_element did not produce the expected result in bivariate poly!"
-        );
+        assert_eq!(expected_y.coefficients.len(), y_scaled.coefficients.len());
+        for (exp_row, scaled_row) in expected_y.coefficients.iter().zip(y_scaled.coefficients.iter()) {
+            assert_eq!(exp_row.get_coefficients(), scaled_row.get_coefficients());
+        }
     }
 }

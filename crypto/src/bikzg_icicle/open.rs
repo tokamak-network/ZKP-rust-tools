@@ -15,6 +15,10 @@ impl BivariateKateZaveruchaGoldbergIcicle {
         poly: &BivariatePolynomial,
     ) -> (BLS12381G1Projective, BLS12381G1Projective) {
         let adjusted_poly = poly.sub_by_field_element(*evaluation);
+        // println!("adjusted_poly.coefficients: {:?}", adjusted_poly.coefficients);
+        for coeff in &adjusted_poly.coefficients {
+            coeff.print();
+        }
         let (q_xy, q_y) = adjusted_poly
             .ruffini_division(x, y)
             .expect("Ruffini division error");
