@@ -195,7 +195,7 @@ impl BivariatePolynomial {
             .max()
             .map(|len| len.saturating_sub(1))
             .unwrap_or(0);
-
+    
         let polys = rows.into_iter().map(|row| {
             let mut row_vec = row.clone();
             // x_degree + 1 길이로 맞추기
@@ -207,7 +207,7 @@ impl BivariatePolynomial {
                 row_vec.len()
             )
         }).collect();
-
+    
         BivariatePolynomial {
             coefficients: polys,
             x_degree,
@@ -243,53 +243,22 @@ impl BivariatePolynomial {
     }
 
     pub fn sub_by_field_element(&self, element: ScalarField) -> Self {
-        // 원본 다항식의 x-degree와 y-degree를 유지
-        let x_degree = self.x_degree;
-        let y_degree = self.y_degree;
-
-        // 각 row에 대한 새로운 계수 벡터 생성
-        let mut new_coeffs = Vec::with_capacity(y_degree + 1);
-
-        // 각 row를 처리
-        for (i, dp) in self.coefficients.iter().enumerate() {
-            let original_coeffs = dp.get_coefficients();
-            
-            // x-degree + 1 길이의 새로운 계수 벡터 생성
-            let mut new_row = vec![ScalarField::zero(); x_degree + 1];
-            
-            // 원본 계수 복사
-            for (j, &coeff) in original_coeffs.iter().enumerate() {
-                if j <= x_degree {
-                    new_row[j] = coeff;
-                }
-            }
-            
-            // 첫 번째 row의 상수항에서만 element를 빼줌
+        // 새로운 Vec<Vec<ScalarField>> 생성
+        let mut new_rows = Vec::new();
+    
+        for (i, poly) in self.coefficients.iter().enumerate() {
+            let mut row = poly.get_coefficients();
+    
+            // 첫 번째 row의 첫 번째 계수만 업데이트
             if i == 0 {
-                new_row[0] = new_row[0] - element;
+                row[0] = row[0] - element;
             }
-            
-            // 새로운 DensePolynomial 생성
-            new_coeffs.push(DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&new_row),
-                new_row.len()
-            ));
+    
+            new_rows.push(row);
         }
-
-        // y-degree + 1 길이만큼 row 보장
-        while new_coeffs.len() <= y_degree {
-            let row = vec![ScalarField::zero(); x_degree + 1];
-            new_coeffs.push(DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&row),
-                row.len()
-            ));
-        }
-
-        Self {
-            coefficients: new_coeffs,
-            x_degree,
-            y_degree,
-        }
+    
+        // BivariatePolynomial::new를 사용하여 새로운 인스턴스 생성
+        BivariatePolynomial::new(new_rows)
     }
 
     pub fn evaluate(&self, x: &ScalarField, y: &ScalarField) -> ScalarField {
@@ -735,7 +704,10 @@ mod tests {
 
     #[test]
     fn test_sub_by_field_element() {
-        let coeffs = vec![vec![ScalarField::from_u32(5), ScalarField::from_u32(2), ScalarField::from_u32(3), ScalarField::from_u32(4)]];
+        let coeffs = vec![
+            vec![ScalarField::from_u32(5), ScalarField::from_u32(2)],
+            vec![ScalarField::from_u32(3), ScalarField::from_u32(4)]
+        ];
         let poly = BivariatePolynomial::new(coeffs);
 
         let element_to_subtract = ScalarField::from_u32(3);
@@ -744,7 +716,7 @@ mod tests {
 
         let expected = BivariatePolynomial::new(vec![
             vec![
-                ScalarField::from_u32(2),   // 3 - 2
+                ScalarField::from_u32(2), 
                 ScalarField::from_u32(2),
             ],
             vec![

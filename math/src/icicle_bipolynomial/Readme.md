@@ -72,8 +72,8 @@ Within the #[cfg(test)] module, there are several unit tests:
 | **test_bivariate_polynomial_new**               | Pass   |
 | **test_evaluate**                               | Pass   |
 | **test_zero**                                   | Pass   |
-| **test_bivariate_polynomial_ruffini_division**  | fail   |
+| **test_bivariate_polynomial_ruffini_division**  | Fail   |
 | **test_polynomial_addition**                    | Pass   |
-| **test_polynomial_subtraction**                 | fail   |
-| **test_sub_by_field_element**                   | fail   |
+| **test_polynomial_subtraction**                 | Fail   |
+| **test_sub_by_field_element**                   | Pass   |
 | **test_scale**                                  | Pass   |
