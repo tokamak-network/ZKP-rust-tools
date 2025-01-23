@@ -12,8 +12,8 @@ of degrees
 by storing one `DensePolynomial` for each power of 
 <img src="https://latex.codecogs.com/svg.latex?y" title="y" />. Specifically:
 
-<img src="https://latex.codecogs.com/svg.latex?p(x,y)&space;\;=\; \sum_{i=0}^{y\_degree} " title="p(x,y) \;=\; \sum_{i=0}^{y\_degree} }" />
-<img src="https://latex.codecogs.com/svg.latex?\Bigl(\text{DensePolynomial in } x\Bigr)\;\cdot\;y^i. " title="p(x,y) \;=\; \sum_{i=0}^{y\_degree} }" />
+<img src="https://latex.codecogs.com/svg.latex?p(x,y)&space;\;=\;&space;\sum_{i=0}^{y\_degree} " title="p(x,y) \;=\; \sum_{i=0}^{y\_degree} }" />
+<img src="https://latex.codecogs.com/svg.latex?\Bigl(\text{DensePolynomial&space;in&space;}&space;x\Bigr)\;\cdot\;y^i." title="p(x,y) \;=\; \sum_{i=0}^{y\_degree} }" />
 
 
 This approach allows us to leverage existing operations for one‐dimensional polynomials (`DensePolynomial`)—such as addition, subtraction, scalar multiplication—and extend them to two variables by stacking them row‐by‐row in terms of powers of \(y\).
