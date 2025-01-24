@@ -185,26 +185,24 @@ impl Sub for BivariatePolynomial {
 
 impl BivariatePolynomial {
     pub fn new(rows: Vec<Vec<ScalarField>>) -> Self {
-        // y_degree = rows.len()
-        // => 예: row가 4개면 y_degree = 4
-        let y_degree = rows.len();
-
-        // x_degree = (가장 긴 row의 길이) + 2
-        // => 예: row 한 줄의 길이가 3이면 x_degree = 5
-        let max_row_len = rows.iter().map(|r| r.len()).max().unwrap_or(0);
-        let x_degree = max_row_len;
-
-        // 이제 각 행(row)을 x_degree 길이만큼 0으로 채워서 DensePolynomial 생성
+        // row(행) 개수를 그대로 y_degree 로
+        let y_degree = rows.len(); // 예: row가 4개면 y_degree = 4
+    
+        // 각 행(row) 중에서 가장 긴 길이를 x_degree 로
+        let x_degree = rows
+            .iter()
+            .map(|r| r.len())
+            .max()
+            .unwrap_or(0); // 아무것도 없으면 0
+    
+        // 이제 각 행을 x_degree 길이로 0-패딩
         let polys = rows.into_iter().map(|mut row| {
-            while row.len() < x_degree {
-                row.push(ScalarField::zero());
+            if row.len() < x_degree {
+                row.resize(x_degree, ScalarField::zero());
             }
-            DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&row),
-                row.len()
-            )
+            DensePolynomial::from_coeffs(HostSlice::from_slice(&row), row.len())
         }).collect();
-
+    
         BivariatePolynomial {
             coefficients: polys,
             x_degree,
@@ -272,23 +270,13 @@ impl BivariatePolynomial {
     }
 
     pub fn flatten_out(&self) -> Vec<ScalarField> {
-        let total_len = (self.x_degree + 1) * (self.y_degree + 1);
-        let mut flattened = Vec::with_capacity(total_len);
-
-        for row_index in 0..=self.y_degree {
-            let row_poly = &self.coefficients[row_index];
+        let mut flattened = Vec::new();
+    
+        for row_poly in &self.coefficients {
             let row_coeffs = row_poly.get_coefficients();
-
-            for x_index in 0..=self.x_degree {
-                let val = if x_index < row_coeffs.len() {
-                    row_coeffs[x_index]
-                } else {
-                    ScalarField::zero()
-                };
-                flattened.push(val);
-            }
+            flattened.extend(row_coeffs.iter());
         }
-
+    
         flattened
     }
 
@@ -501,6 +489,21 @@ mod tests {
     fn test_zero() {
         let zero_poly = BivariatePolynomial::zero();
         assert!(zero_poly.coefficients[0].get_coefficients().iter().all(|c| *c == ScalarField::zero()));
+    }
+
+    #[test]
+    fn test_flatten_out() {
+        let coeffs = vec![
+            vec![ScalarField::from_u32(1), ScalarField::from_u32(2)], 
+            vec![ScalarField::from_u32(3), ScalarField::from_u32(4)],
+        ];
+
+        let poly = BivariatePolynomial::new(coeffs);
+        let flattened = poly.flatten_out();
+
+        let expected = vec![ScalarField::from_u32(1), ScalarField::from_u32(2), ScalarField::from_u32(3), ScalarField::from_u32(4)];
+
+        assert_eq!(flattened, expected);
     }
 
     #[test]

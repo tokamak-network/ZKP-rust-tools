@@ -1,6 +1,3 @@
-// src/bikzg_icicle/mod.rs
-use crate::bikzg;
-
 pub mod srs;
 pub mod commit;
 pub mod open;
@@ -19,9 +16,7 @@ impl BivariateKateZaveruchaGoldbergIcicle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::srs::StructuredReferenceString as SrsIcicle;
-    use crate::bikzg::{srs as LambdaSRS, BivariateKateZaveruchaGoldberg, IsCommitmentScheme, PointConversion};
-    use crate::bikzg::srs::StructuredReferenceString as SrsLambda;
+    use crate::bikzg::{BivariateKateZaveruchaGoldberg, IsCommitmentScheme, PointConversion};
     use icicle_bls12_381::curve::ScalarField;
     use icicle_core::traits::FieldImpl;
     use lambdaworks_math::elliptic_curve::short_weierstrass::curves::bls12_381::default_types::{FrElement, FrField};
@@ -88,6 +83,7 @@ mod tests {
         
         let proof_converted = (PointConversion::from_icicle(&proof.0).unwrap(), PointConversion::from_icicle(&proof.1).unwrap());
         assert_eq!(proof_converted.0, lambda_proof.0);
+        assert_eq!(proof_converted.1, lambda_proof.1);
 
         let is_valid = lambda_bikzg.verify(
             &x_converted,
@@ -96,7 +92,7 @@ mod tests {
             &p_commitment_converted,
             &proof_converted,
         );
-        // assert!(is_valid, "BiKZG verification failed");
+        assert!(is_valid, "not valid verify");
     }
 
 

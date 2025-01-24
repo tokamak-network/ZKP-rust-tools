@@ -15,12 +15,14 @@ impl BivariateKateZaveruchaGoldbergIcicle {
         &self,
         poly: &BivariatePolynomial, 
     ) -> BLS12381G1Projective {
+        println!("aaa");
+        println!("len: {:?}", poly.flatten_out().len());
         let scalars: Vec<ScalarField> = poly
             .flatten_out()
             .iter()
             .cloned()
             .collect();
-
+        println!("bbb");
         let points = &self.srs.flatten_partitioned_g1_points_icicle(2, 2);
         println!("lens: {:?}, {:?}", scalars.len(), points.len());
         assert_eq!(scalars.len(), points.len());

@@ -1,16 +1,11 @@
 // srs.rs
 use icicle_bls12_381::curve::{
-    BaseField, CurveCfg, G1Projective as IcicleG1Projective, G2Affine, ScalarField
+    BaseField, CurveCfg, G1Projective as IcicleG1Projective
 };
 use icicle_core::curve::Affine;
-use icicle_core::traits::{Arithmetic, FieldImpl};
-use rand::Rng;
+use icicle_core::traits::FieldImpl;
 
-use lambdaworks_math::{elliptic_curve::{
-    short_weierstrass::{curves::bls12_381::{
-            curve::BLS12381Curve, twist::BLS12381TwistCurve
-        }, point::ShortWeierstrassProjectivePoint}, traits::IsEllipticCurve
-}, traits::ByteConversion};
+use lambdaworks_math::{elliptic_curve::short_weierstrass::{curves::bls12_381::curve::BLS12381Curve, point::ShortWeierstrassProjectivePoint}, traits::ByteConversion};
 
 use crate::bikzg::srs::{StructuredReferenceString as LambdaSrs, G1Point, G2Point};
 

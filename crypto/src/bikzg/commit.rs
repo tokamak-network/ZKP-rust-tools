@@ -92,15 +92,6 @@ impl<
         let tau_g2 = &self.srs.powers_secondary_group[1];
         let theta_g2 = &self.srs.powers_secondary_group[2];
 
-        // println!("g2: {:?}", g2);
-        // println!("tau_g2: {:?}", tau_g2); // tau_g2 does not implement Debug
-        // println!("evaluation: {:?}", evaluation.representative());
-        println!("x: {:?}", x);
-        println!("y: {:?}", y);
-        println!("evaluation: {:?}", evaluation);
-        println!("");
-        println!("p_commitment: {:?}", p_commitment);
-
         let pairing_result = P::compute_batch(&[
             (
                 &p_commitment.operate_with(
@@ -123,8 +114,6 @@ impl<
                 )),
             ),
         ]);
-        println!("");
-        println!("pairing_result: {:?}", pairing_result);
         pairing_result == Ok(FieldElement::one())
     }
 }
