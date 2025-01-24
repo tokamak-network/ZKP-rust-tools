@@ -1,20 +1,22 @@
-﻿
+﻿use lambdaworks_groth16::{common::{FrElement,FrField}, qap::QuadraticArithmeticProgram,r1cs::{ConstraintSystem, R1CS}};
 
 
-use lambdaworks_groth16::{common::{FrElement,FrField}, r1cs::{self, ConstraintSystem, R1CS}};
-
-
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Debug)]
 pub struct BeckendProver {
     // need to ask about the inputs of different phases 
     pub subcircuits: Vec<R1CS>,
-    // pub 
+    
+    pub qaps :Vec<QuadraticArithmeticProgram>, // this 
+
+
 
 
 
 }
 
 impl BeckendProver {
+    // pub fn 
+
     // function for set witnesses and calculate arithmatic proof 
     pub fn Calculate_Arithmatic_Proof(ordered_idx: &[usize], witnesses: &[Vec<FrElement>]) {}
 
