@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["math", "crypto","prover/batch_groth16", "prover/ooo_snark"]
+members = ["math", "crypto","prover/batch_groth16", "prover/ooo_snark", "prover/backend"]
 exclude = ["ensure-no_std"]
 resolver = "2"
 

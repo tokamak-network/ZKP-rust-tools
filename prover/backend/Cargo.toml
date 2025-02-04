@@ -10,9 +10,14 @@ name = "backend"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.4.6", features = ["derive"] }
-lambdaworks-crypto = { workspace = true, features = ["serde"]}
-lambdaworks-math = { workspace = true, features = ["lambdaworks-serde-string"] }
+clap = { version = "4", features = ["derive"] }
+lambdaworks-groth16 = {  git="https://github.com/lambdaclass/lambdaworks.git",version = "0.11.0"}
+lambdaworks-math = { git="https://github.com/lambdaclass/lambdaworks.git", version = "0.11.0" }
+
+# lambdaworks-math = { workspace = true, features = ["lambdaworks-serde-string"] }
 serde = { version = "1.0" }
 serde_json = "1"
-bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git", features= ['serde'] }
+thiserror = "2.0.11"
+wasmer = "5.0.0"
+wasmer-wasix = "0.34.0"
+# bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git", features= ['serde'] }
