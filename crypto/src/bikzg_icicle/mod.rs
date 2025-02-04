@@ -24,7 +24,7 @@ mod tests {
     use lambdaworks_math::field::element::FieldElement;
     use lambdaworks_math::traits::ByteConversion;
     use ndarray::array;
-    use zkp_rust_tools_math::icicle_bipolynomial::BivariatePolynomial;
+    use zkp_rust_tools_math::icicle_bipolynomial::bipolynomial::BivariatePolynomial;
     use zkp_rust_tools_math::bipolynomial::BivariatePolynomial as LambdaBivariatePolynomial;
 
     #[allow(clippy::upper_case_acronyms)]

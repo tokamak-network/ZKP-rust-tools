@@ -8,7 +8,7 @@ use lambdaworks_math::field::traits::{IsField, IsSubFieldOf};
 use lambdaworks_math::polynomial::Polynomial as UnivariatePolynomial;
 use ndarray::{
     s, 
-    Array, 
+    
     Array2, 
     // ArrayBase, 
     Axis, 
@@ -589,6 +589,7 @@ mod tests {
     type F = U64PrimeField<ORDER>;
     type FE = FieldElement<F>;
     use ndarray::array;
+    use ndarray::Array;
 
     // 3 + x + 2x*y + x^2*y + 4x*y^2
     // because we lexicography order is based on y and x the vector should represent like this

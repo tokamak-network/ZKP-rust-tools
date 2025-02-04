@@ -2,7 +2,7 @@
 
 use icicle_bls12_381::curve::ScalarField;
 use icicle_bls12_381::curve::G1Projective as BLS12381G1Projective;
-use zkp_rust_tools_math::icicle_bipolynomial::BivariatePolynomial;
+use zkp_rust_tools_math::icicle_bipolynomial::bipolynomial::BivariatePolynomial;
 use super::BivariateKateZaveruchaGoldbergIcicle; 
 
 

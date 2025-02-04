@@ -6,7 +6,7 @@ use icicle_core::msm;
 use icicle_bls12_381::{curve::{
     G1Projective as BLS12381G1Projective, ScalarField,
 }, polynomials::DensePolynomial};
-use zkp_rust_tools_math::icicle_bipolynomial::{BivariatePolynomial, DensePolynomialExt};
+use zkp_rust_tools_math::icicle_bipolynomial::{bipolynomial::BivariatePolynomial, dense_ext::DensePolynomialExt};
 
 use super::BivariateKateZaveruchaGoldbergIcicle; 
 

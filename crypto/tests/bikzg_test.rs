@@ -11,7 +11,7 @@ use zkp_rust_tools_crypto::{
 };
 use icicle_bls12_381::curve::ScalarField;
 use ndarray::array;
-use zkp_rust_tools_math::icicle_bipolynomial::BivariatePolynomial;
+// use zkp_rust_tools_math::icicle_bipolynomial::bipolynomial::BivariatePolynomial;
 
 // #[test]
 // fn test_cross_implementation_verification() {
