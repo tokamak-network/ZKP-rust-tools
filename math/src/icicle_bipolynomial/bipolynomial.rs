@@ -15,6 +15,62 @@ pub struct BivariatePolynomial {
     pub y_degree: usize,
 }
 
+use std::ops::Mul;
+
+impl Mul for &BivariatePolynomial {
+    type Output = BivariatePolynomial;
+
+    fn mul(self, other: &BivariatePolynomial) -> BivariatePolynomial {
+        // Calculate degrees
+        let result_x_degree = self.x_degree + other.x_degree;
+        let result_y_degree = self.y_degree + other.y_degree;
+
+        // Initialize result matrix with zeros
+        let mut result = vec![vec![ScalarField::zero(); result_x_degree + 1]; result_y_degree + 1];
+
+        // Multiply term by term
+        for i in 0..=self.y_degree {
+            for j in 0..=self.x_degree {
+                if i >= self.coefficients.len() || j >= self.coefficients[i].get_coefficients().len() {
+                    continue;
+                }
+                let coeff1 = &self.coefficients[i].get_coefficients()[j];
+                
+                for k in 0..=other.y_degree {
+                    for l in 0..=other.x_degree {
+                        if k >= other.coefficients.len() || l >= other.coefficients[k].get_coefficients().len() {
+                            continue;
+                        }
+                        let coeff2 = &other.coefficients[k].get_coefficients()[l];
+                        
+                        // Multiply coefficients
+                        let prod = *coeff1 * *coeff2;
+                        
+                        // Add to result at appropriate position
+                        let y_pos = i + k;
+                        let x_pos = j + l;
+                        if y_pos < result.len() && x_pos < result[y_pos].len() {
+                            result[y_pos][x_pos] = result[y_pos][x_pos] + prod;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert result to DensePolynomial format
+        let result_polynomials: Vec<DensePolynomial> = result
+            .into_iter()
+            .map(|row| DensePolynomial::from_coeffs(HostSlice::from_slice(&row), row.len()))
+            .collect();
+
+        BivariatePolynomial {
+            coefficients: result_polynomials,
+            x_degree: result_x_degree,
+            y_degree: result_y_degree,
+        }
+    }
+}
+
 impl Add for BivariatePolynomial {
     type Output = Self;
 

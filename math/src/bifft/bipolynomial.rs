@@ -123,8 +123,6 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
        // Ok(scaled.scale(&offset_x.inv().unwrap(),&offset_y.inv().unwrap()))
 
     }
-
-
 }
 
 #[cfg(test)]
@@ -258,9 +256,9 @@ mod tests {
             let a_evals =  BivariatePolynomial::evaluate_fft::<F>(&polynomial_a(), 1, 1, Some(4), Some(4)).unwrap();
             
             let b_evals = BivariatePolynomial::evaluate_fft::<F>(&polynomial_b(), 1, 1,  Some(4), Some(4)).unwrap();
-
+            // println!("a_evals: {:?}, {:?}", polynomial_a(), a_evals);
             let mul_eval = a_evals * b_evals ;
-
+            println!("mul_eval{:?}", mul_eval);
             let mul_poly = BivariatePolynomial::interpolate_fft::<F>(&mul_eval).unwrap();
             
             assert_eq!(mul_poly, a_times_b);
