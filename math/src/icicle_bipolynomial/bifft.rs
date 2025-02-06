@@ -70,42 +70,46 @@ fn perform_ntt(
 
 impl BivariatePolynomial {
     pub fn test_multiply_bivariates(a: &Self, b: &Self) -> Result<Self, NTTError> {
-        let max_degree = core::cmp::max(
-            core::cmp::max(a.x_degree, a.y_degree),
-            core::cmp::max(b.x_degree, b.y_degree)
-        );
-        let padded_size = (max_degree + 1).next_power_of_two() * 2;
+        // 최종 결과의 차수 계산
+        let result_x_degree = a.x_degree + b.x_degree;
+        let result_y_degree = a.y_degree + b.y_degree;
+        let max_degree = core::cmp::max(result_x_degree, result_y_degree);
+        
+        // FFT를 위한 패딩된 크기 계산
+        let padded_size = (max_degree + 1).next_power_of_two();
 
-        // 1. NTT evaluation
+        // Evaluate
         let a_evals = a.evaluate_ntt(1, 1, Some(padded_size), Some(padded_size))?;
         let b_evals = b.evaluate_ntt(1, 1, Some(padded_size), Some(padded_size))?;
 
         assert_eq!(a_evals.len(), b_evals.len(), "NTT row count mismatch");
         let n = a_evals.len();
 
-        // 2. Pointwise multiplication
+        // Pointwise multiplication with scaling
         let mut mul_evals = Vec::with_capacity(n);
         for i in 0..n {
             let mut prod = a_evals[i].mul(&b_evals[i]);
-            // Scale by 1/n^2 for 2D FFT normalization using u32
-            let scale = ScalarField::from_u32(n as u32).inv();  // n으로 한번
-            prod = prod.scale(&scale);  
-            prod = prod.scale(&scale);  // n으로 두번 나누어 n^2 효과
+            // Scale by 1/n
+            let scale = ScalarField::from_u32(n as u32).inv();
+            prod = prod.scale(&scale);
             mul_evals.push(prod);
         }
 
-        // 3. Interpolate
-        let result = Self::interpolate_ntt(&mul_evals)?;
+        // Interpolate
+        let mut result = Self::interpolate_ntt(&mul_evals)?;
 
-        // 4. 결과를 정확한 크기로 자르기
-        let target_size = 4;  // a_times_b test vector의 크기
-        let mut trimmed_coeffs = Vec::new();
-        for row in result.coefficients.iter().take(target_size) {
-            let coeffs = row.get_coefficients();
-            trimmed_coeffs.push(coeffs[..target_size].to_vec());
+        // 최종 결과의 크기를 실제 차수에 맞게 조정
+        let target_rows = result_y_degree + 1;
+        let target_cols = result_x_degree + 1;
+
+        let mut final_coeffs = Vec::with_capacity(target_rows);
+        for row in result.coefficients.iter().take(target_rows) {
+            let mut new_row = row.get_coefficients();
+            new_row.truncate(target_cols);
+            final_coeffs.push(new_row);
         }
 
-        Ok(Self::new(trimmed_coeffs))
+        Ok(Self::new(final_coeffs))
     }
 
     pub fn evaluate_ntt(
@@ -122,16 +126,16 @@ impl BivariatePolynomial {
         let len_y = core::cmp::max(self.y_degree + 1, dy).next_power_of_two() * y_blowup_factor;
         let padded_len = len_x.max(len_y);
 
-        // NTT domain 초기화
+        // Initialize NTT domain
         initialize_domain(
             get_root_of_unity::<ScalarField>(padded_len as u64),
             &NTTInitDomainConfig::default()
         ).map_err(|_| "Failed to initialize NTT domain")?;
 
-        // 계수 행렬 초기화
+        // Initialize coefficient matrix
         let mut coeffs = Array2::from_elem((padded_len, padded_len), ScalarField::zero());
         
-        // 입력 데이터 복사
+        // Copy input data
         for (i, row) in self.coefficients.iter().enumerate() {
             let row_coeffs = row.get_coefficients();
             for (j, val) in row_coeffs.iter().enumerate() {
@@ -143,7 +147,7 @@ impl BivariatePolynomial {
 
         let mut device_buffer = DeviceBuffer::new(padded_len)?;
 
-        // 행 방향 FFT
+        // Row-wise FFT
         for i in 0..padded_len {
             let row: Vec<_> = coeffs.row(i).to_vec();
             let input_slice = HostSlice::from_slice(&row);
@@ -153,7 +157,7 @@ impl BivariatePolynomial {
             }
         }
 
-        // 열 방향 FFT
+        // Column-wise FFT
         for j in 0..padded_len {
             let col: Vec<_> = coeffs.column(j).to_vec();
             let input_slice = HostSlice::from_slice(&col);
@@ -163,7 +167,7 @@ impl BivariatePolynomial {
             }
         }
 
-        // DensePolynomial로 변환
+        // Convert to DensePolynomial
         let mut result = Vec::with_capacity(padded_len);
         for i in 0..padded_len {
             let row: Vec<_> = coeffs.row(i).to_vec();
@@ -183,7 +187,7 @@ impl BivariatePolynomial {
         
         let mut coeffs = Array2::from_elem((len, len), ScalarField::zero());
         
-        // 입력 데이터 복사
+        // Copy input data
         for (i, poly) in ntt_evals.iter().enumerate() {
             let row = poly.get_coefficients();
             for (j, val) in row.iter().enumerate() {
@@ -195,7 +199,7 @@ impl BivariatePolynomial {
 
         let mut device_buffer = DeviceBuffer::new(len)?;
 
-        // 행 방향 역FFT
+        // Row-wise inverse FFT
         for i in 0..len {
             let row: Vec<_> = coeffs.row(i).to_vec();
             let input_slice = HostSlice::from_slice(&row);
@@ -205,7 +209,7 @@ impl BivariatePolynomial {
             }
         }
 
-        // 열 방향 역FFT
+        // Column-wise inverse FFT
         for j in 0..len {
             let col: Vec<_> = coeffs.column(j).to_vec();
             let input_slice = HostSlice::from_slice(&col);
@@ -215,7 +219,7 @@ impl BivariatePolynomial {
             }
         }
 
-        // 2D 벡터로 변환
+        // Convert back to 2D vector
         let mut result = Vec::with_capacity(len);
         for i in 0..len {
             let row: Vec<_> = coeffs.row(i).to_vec();
