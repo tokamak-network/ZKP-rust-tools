@@ -130,12 +130,11 @@ mod tests {
     use super::*;
     use lambdaworks_math::field::element::FieldElement;
     use lambdaworks_math::field::{
-        test_fields::u64_test_field::{U64TestField, U64TestFieldExtension},
+        // test_fields::u64_test_field::{U64TestField, U64TestFieldExtension},
         traits::RootsConfig,
     };
-    use ndarray::{array, Array, Array1};
 
-    use lambdaworks_math::fft::cpu::roots_of_unity::{get_powers_of_primitive_root, get_powers_of_primitive_root_coset};
+    use lambdaworks_math::fft::cpu::roots_of_unity::get_powers_of_primitive_root;
 
     fn gen_fft_and_naive_evaluation<F: IsFFTField>(
         poly: BivariatePolynomial<FieldElement<F>>,
@@ -171,7 +170,8 @@ mod tests {
 
     mod u64_field_tests {
         use super::*;
-        use lambdaworks_math::{fft, field::test_fields::u64_test_field::U64TestField, msm::naive};
+        use lambdaworks_math::field::test_fields::u64_test_field::U64TestField;
+        use ndarray::array;
 
         // FFT related tests
         type F = U64TestField;
@@ -210,7 +210,7 @@ mod tests {
             let a_poly = polynomial_a();
             // let evals = BivariatePolynomial::evaluate_fft::<F>(&a_poly, 1, 1, None, None);
             let (fft_eval, naive_eval) = gen_fft_and_naive_evaluation(a_poly);
-            let mut naive_copy = naive_eval.clone();
+            let naive_copy = naive_eval.clone();
             // naive_copy[[0, 0]] = FE::one();
 
             #[cfg(debug_assertions)]
@@ -312,9 +312,4 @@ mod tests {
         }
 
     }
-
-
-
-
-
 }
