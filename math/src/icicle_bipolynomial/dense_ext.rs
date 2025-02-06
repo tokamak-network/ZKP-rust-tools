@@ -1,18 +1,19 @@
+// src/icicle_bipolynomial/dense_ext.rs
+
 use icicle_bls12_381::polynomials::DensePolynomial;
-use std::vec::Vec;
-use icicle_core::polynomials::UnivariatePolynomial;
 use icicle_bls12_381::curve::ScalarField;
-use icicle_runtime::memory::HostSlice;
+use icicle_core::polynomials::UnivariatePolynomial;
 use icicle_core::traits::FieldImpl;
+use icicle_runtime::memory::HostSlice;
 
 pub trait DensePolynomialExt {
-    fn zero() -> Self;
     fn get_coefficients(&self) -> Vec<ScalarField>;
     fn scale(&self, scalar: &ScalarField) -> Self;
     fn sub_constant(&mut self, constant: ScalarField);
     fn get_constant(&self) -> ScalarField;
     fn ruffini_division(&self, b: &ScalarField) -> Result<(DensePolynomial, ScalarField), &'static str>;
     fn add_polynomial(&self, other: &DensePolynomial) -> DensePolynomial;
+    fn zero() -> DensePolynomial;
     fn mul(&self, other: &DensePolynomial) -> DensePolynomial;
 }
 
@@ -29,27 +30,26 @@ impl DensePolynomialExt for DensePolynomial {
     }
 
     fn scale(&self, scalar: &ScalarField) -> Self {
-        let new_coeffs: Vec<ScalarField> = self
-            .get_coefficients()
+        let new_cfs: Vec<ScalarField> = self.get_coefficients()
             .iter()
             .map(|c| *c * *scalar)
             .collect();
 
         DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&new_coeffs),
-            new_coeffs.len()
+            HostSlice::from_slice(&new_cfs),
+            new_cfs.len()
         )
     }
 
     fn sub_constant(&mut self, constant: ScalarField) {
-        let mut coeffs = self.get_coefficients();
-        if coeffs.is_empty() {
-            panic!("Polynomial has no coefficients.");
+        let mut cfs = self.get_coefficients();
+        if cfs.is_empty() {
+            panic!("Polynomial has no coefficients");
         }
-        coeffs[0] = coeffs[0] - constant; 
+        cfs[0] = cfs[0] - constant;
         *self = DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&coeffs),
-            coeffs.len()
+            HostSlice::from_slice(&cfs),
+            cfs.len()
         );
     }
 
@@ -60,34 +60,28 @@ impl DensePolynomialExt for DensePolynomial {
     fn ruffini_division(&self, b: &ScalarField) -> Result<(DensePolynomial, ScalarField), &'static str> {
         let n = self.get_nof_coeffs();
         if n == 0 {
-            return Err("Polynomial has no coefficients.");
+            return Err("Polynomial has no coefficients");
         }
-
-        let coeffs = self.get_coefficients();
+        let cfs = self.get_coefficients();
         if n == 1 {
-            return Ok((
-                DensePolynomial::from_coeffs(HostSlice::from_slice(&[]), 0),
-                coeffs[0]
-            ));
+            // 상수항만 있음
+            return Ok((DensePolynomial::from_coeffs(HostSlice::from_slice(&[]), 0), cfs[0]));
         }
 
-        let mut temp = coeffs[n as usize - 1];
-        let mut q = Vec::with_capacity(n as usize - 1);
-        q.push(temp);
-
-        for i in (0..n-1).rev() {
-            temp = temp * *b + coeffs[i as usize];
-            if i > 0 {
-                q.insert(0, temp);
-            }
+        let mut result = vec![cfs[(n-1) as usize]];
+        let mut temp = cfs[(n-1) as usize];
+        for i in (0..(n-1)).rev() {
+            temp = temp * *b + cfs[i as usize];
+            result.push(temp);
         }
 
-        let remainder = temp;
-
-        Ok((
-            DensePolynomial::from_coeffs(HostSlice::from_slice(&q), q.len()),
-            remainder
-        ))
+        let remainder = result.pop().unwrap();
+        result.reverse();
+        let quotient = DensePolynomial::from_coeffs(
+            HostSlice::from_slice(&result),
+            result.len()
+        );
+        Ok((quotient, remainder))
     }
 
     fn add_polynomial(&self, other: &DensePolynomial) -> DensePolynomial {
@@ -109,23 +103,19 @@ impl DensePolynomialExt for DensePolynomial {
     }
 
     fn mul(&self, other: &DensePolynomial) -> DensePolynomial {
-        let self_coeffs = self.get_coefficients();
-        let other_coeffs = other.get_coefficients();
-        let n = self_coeffs.len();
-        let m = other_coeffs.len();
-        let result_len = n + m - 1;
-        
-        let mut result = vec![ScalarField::zero(); result_len];
-        
-        for i in 0..n {
-            for j in 0..m {
-                result[i + j] = result[i + j] + (self_coeffs[i] * other_coeffs[j]);
+        let a = self.get_coefficients();
+        let b = other.get_coefficients();
+        let mut product = vec![ScalarField::zero(); a.len() + b.len() - 1];
+
+        for (i, &aa) in a.iter().enumerate() {
+            for (j, &bb) in b.iter().enumerate() {
+                product[i + j] = product[i + j] + (aa * bb);
             }
         }
-        
+
         DensePolynomial::from_coeffs(
-            HostSlice::from_slice(&result),
-            result.len()
+            HostSlice::from_slice(&product),
+            product.len()
         )
     }
 }

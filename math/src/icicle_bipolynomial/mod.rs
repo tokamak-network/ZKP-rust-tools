@@ -85,8 +85,8 @@ mod tests {
     #[test]
     fn test_bp_new() {
         let poly = polynomial_b();
-        assert_eq!(poly.x_degree, 3);
-        assert_eq!(poly.y_degree, 3);
+        assert_eq!(poly.x_degree, 2);
+        assert_eq!(poly.y_degree, 2);
     }
 
     #[test]
@@ -94,8 +94,8 @@ mod tests {
         // Example: 3 + x + 2xy + x^2y + 4xy^2
         let poly = polynomial_a();
 
-        assert_eq!(poly.x_degree, 3);
-        assert_eq!(poly.y_degree, 3);
+        assert_eq!(poly.x_degree, 2);
+        assert_eq!(poly.y_degree, 2);
 
         let expected_coeffs = polynomial_a().coefficients;
         for (actual, expected) in poly.coefficients.iter().zip(expected_coeffs.iter()) {

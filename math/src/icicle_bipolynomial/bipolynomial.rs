@@ -1,161 +1,45 @@
-use icicle_bls12_381::polynomials::DensePolynomial;
-use alloc::vec::Vec;
+// src/icicle_bipolynomial/bipolynomial.rs
 
-use core::ops::{Add, Sub};
 use icicle_bls12_381::curve::ScalarField;
-use icicle_runtime::memory::HostSlice;
 use icicle_core::{polynomials::UnivariatePolynomial, traits::FieldImpl};
+use icicle_bls12_381::polynomials::DensePolynomial;
+use icicle_runtime::memory::HostSlice;
+use std::ops::{Add, Sub};
 
 use super::dense_ext::DensePolynomialExt;
 
-
+/// 이변수 다항식(2D). 내부적으로 여러 개의 `DensePolynomial`(단변수 다항식)을
+/// y방향으로 쌓아둠. 즉, coefficients[i] = (단변수 in x) * y^i
 pub struct BivariatePolynomial {
     pub coefficients: Vec<DensePolynomial>,
     pub x_degree: usize,
     pub y_degree: usize,
 }
 
-use std::ops::Mul;
-
-impl Mul for &BivariatePolynomial {
-    type Output = BivariatePolynomial;
-
-    fn mul(self, other: &BivariatePolynomial) -> BivariatePolynomial {
-        // Calculate degrees
-        let result_x_degree = self.x_degree + other.x_degree;
-        let result_y_degree = self.y_degree + other.y_degree;
-
-        // Initialize result matrix with zeros
-        let mut result = vec![vec![ScalarField::zero(); result_x_degree + 1]; result_y_degree + 1];
-
-        // Multiply term by term
-        for i in 0..=self.y_degree {
-            for j in 0..=self.x_degree {
-                if i >= self.coefficients.len() || j >= self.coefficients[i].get_coefficients().len() {
-                    continue;
-                }
-                let coeff1 = &self.coefficients[i].get_coefficients()[j];
-                
-                for k in 0..=other.y_degree {
-                    for l in 0..=other.x_degree {
-                        if k >= other.coefficients.len() || l >= other.coefficients[k].get_coefficients().len() {
-                            continue;
-                        }
-                        let coeff2 = &other.coefficients[k].get_coefficients()[l];
-                        
-                        // Multiply coefficients
-                        let prod = *coeff1 * *coeff2;
-                        
-                        // Add to result at appropriate position
-                        let y_pos = i + k;
-                        let x_pos = j + l;
-                        if y_pos < result.len() && x_pos < result[y_pos].len() {
-                            result[y_pos][x_pos] = result[y_pos][x_pos] + prod;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Convert result to DensePolynomial format
-        let result_polynomials: Vec<DensePolynomial> = result
-            .into_iter()
-            .map(|row| DensePolynomial::from_coeffs(HostSlice::from_slice(&row), row.len()))
-            .collect();
-
-        BivariatePolynomial {
-            coefficients: result_polynomials,
-            x_degree: result_x_degree,
-            y_degree: result_y_degree,
-        }
-    }
-}
-
-impl Add for BivariatePolynomial {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        let mut result_coeffs = Vec::with_capacity(self.coefficients.len().max(other.coefficients.len()));
-
-        for i in 0..result_coeffs.capacity() {
-            let zero_poly = DensePolynomial::zero();
-            let self_poly = self.coefficients.get(i).unwrap_or(&zero_poly);
-            let other_poly = other.coefficients.get(i).unwrap_or(&zero_poly);
-            result_coeffs.push(self_poly.add_polynomial(other_poly));
-        }
-
-        BivariatePolynomial {
-            coefficients: result_coeffs,
-            x_degree: self.x_degree.max(other.x_degree),
-            y_degree: self.y_degree.max(other.y_degree),
-        }
-    }
-}
-
-impl Sub for BivariatePolynomial {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        let max_y_degree = self.y_degree.max(other.y_degree);
-        let max_x_degree = self.x_degree.max(other.x_degree);
-
-        let mut result_coeffs = Vec::with_capacity(max_y_degree + 1);
-
-        for i in 0..=max_y_degree {
-            let self_coeffs = if i < self.coefficients.len() {
-                self.coefficients[i].get_coefficients()
-            } else {
-                vec![ScalarField::zero(); max_x_degree + 1]
-            };
-
-            let other_coeffs = if i < other.coefficients.len() {
-                other.coefficients[i].get_coefficients()
-            } else {
-                vec![ScalarField::zero(); max_x_degree + 1]
-            };
-
-            let mut row_coeffs = vec![];
-            for j in 0..=max_x_degree {
-                let a = if j < self_coeffs.len() { self_coeffs[j] } else { ScalarField::zero() };
-                let b = if j < other_coeffs.len() { other_coeffs[j] } else { ScalarField::zero() };
-                row_coeffs.push(a - b);
-            }
-
-            result_coeffs.push(DensePolynomial::from_coeffs(
-                HostSlice::from_slice(&row_coeffs),
-                row_coeffs.len(),
-            ));
-        }
-
-        Self {
-            coefficients: result_coeffs,
-            x_degree: max_x_degree,
-            y_degree: max_y_degree,
-        }
-    }
-}
-
-
 impl BivariatePolynomial {
+    /// 새 이차 다항식 생성
+    /// rows: 각 y^i 행에 대해 x방향의 계수를 담은 벡터
+    /// 예: rows[i][j] = (coefficient for x^j * y^i)
     pub fn new(rows: Vec<Vec<ScalarField>>) -> Self {
-        // row(행) 개수를 그대로 y_degree 로
-        let y_degree = rows.len(); // 예: row가 4개면 y_degree = 4
-    
-        // 각 행(row) 중에서 가장 긴 길이를 x_degree 로
+        let y_degree = rows.len().saturating_sub(1);
         let x_degree = rows
             .iter()
             .map(|r| r.len())
             .max()
-            .unwrap_or(0); // 아무것도 없으면 0
-    
-        // 이제 각 행을 x_degree 길이로 0-패딩
-        let polys = rows.into_iter().map(|mut row| {
-            if row.len() < x_degree {
-                row.resize(x_degree, ScalarField::zero());
+            .map(|len| len.saturating_sub(1))
+            .unwrap_or(0);
+
+        let polys = rows.into_iter().map(|row| {
+            let mut row_vec = row;
+            while row_vec.len() <= x_degree {
+                row_vec.push(ScalarField::zero());
             }
-            DensePolynomial::from_coeffs(HostSlice::from_slice(&row), row.len())
+            DensePolynomial::from_coeffs(
+                HostSlice::from_slice(&row_vec),
+                row_vec.len()
+            )
         }).collect();
-    
+
         BivariatePolynomial {
             coefficients: polys,
             x_degree,
@@ -163,11 +47,13 @@ impl BivariatePolynomial {
         }
     }
 
+    /// 0 이차 다항식
     pub fn zero() -> Self {
         let z = vec![ScalarField::zero()];
-        let slice = HostSlice::from_slice(&z);
         BivariatePolynomial {
-            coefficients: vec![DensePolynomial::from_coeffs(slice, z.len())],
+            coefficients: vec![
+                DensePolynomial::from_coeffs(HostSlice::from_slice(&z), z.len())
+            ],
             x_degree: 0,
             y_degree: 0,
         }
@@ -209,118 +95,175 @@ impl BivariatePolynomial {
         BivariatePolynomial::new(new_rows)
     }
 
+    /// p(x,y) = ∑_{i=0..y_degree} coefficients[i].eval(x) * (y^i)
     pub fn evaluate(&self, x: &ScalarField, y: &ScalarField) -> ScalarField {
         let mut acc = ScalarField::zero();
         for (i, poly) in self.coefficients.iter().enumerate() {
-            let mut ypow = ScalarField::one();
+            let mut y_pow = ScalarField::one();
             for _ in 0..i {
-                ypow = ypow * *y;
+                y_pow = y_pow * *y;
             }
             let px = poly.eval(x);
-            acc = acc + (px * ypow);
+            acc = acc + (px * y_pow);
         }
         acc
     }
 
+    /// (x-축 차수+1) * (y-축 차수+1) 길이로 계수를 1D 벡터로 펼침
     pub fn flatten_out(&self) -> Vec<ScalarField> {
-        let mut flattened = Vec::new();
-    
-        for row_poly in &self.coefficients {
+        let total_len = (self.x_degree + 1) * (self.y_degree + 1);
+        let mut flattened = Vec::with_capacity(total_len);
+
+        for row_i in 0..=self.y_degree {
+            let row_poly = &self.coefficients[row_i];
             let row_coeffs = row_poly.get_coefficients();
-            flattened.extend(row_coeffs.iter());
+            for x_i in 0..=self.x_degree {
+                let val = if x_i < row_coeffs.len() {
+                    row_coeffs[x_i]
+                } else {
+                    ScalarField::zero()
+                };
+                flattened.push(val);
+            }
         }
-    
+
         flattened
     }
 
+    /// Ruffini division 예시: (x - a), (y - b)로 나누는 시나리오
+    ///  - 각 row = p_i(x)에 대해 (x-a)로 나눈 몫·나머지 -> 나머지를 y방향에 합성
     pub fn ruffini_division(
         &self,
-        a: &ScalarField,  // (x-a)
-        b: &ScalarField,  // (y-b)
+        a: &ScalarField,
+        b: &ScalarField,
     ) -> Result<(BivariatePolynomial, DensePolynomial), &'static str> {
         let mut q_xy_rows = Vec::new();
         let mut remainders = Vec::new();
     
-        // 각 row에 대해 x로 나누기
+        // (x - a)로 나눠서 row별로 몫·나머지 구함
         for poly in &self.coefficients {
             let (q, r) = poly.ruffini_division(a)?;
             q_xy_rows.push(q);
             remainders.push(r);
         }
     
-        // remainder_y 다항식 구성
-        let mut remainder_y = Self::dense_poly_zero();
+        // remainders: r_i -> remainder_y( x^?, y^i ) 형태
+        let mut remainder_y = DensePolynomial::zero();
         for (i, &rem) in remainders.iter().enumerate() {
-            let monomial = Self::dense_poly_new_monomial(rem, i);
+            let mut cf = vec![ScalarField::zero(); i+1];
+            cf[i] = rem;
+            let monomial = DensePolynomial::from_coeffs(HostSlice::from_slice(&cf), cf.len());
             remainder_y = remainder_y.add_polynomial(&monomial);
         }
-    
-        // y로 나누기
+        // remainder_y를 (y - b)로 나누기
         let (q_y, _) = remainder_y.ruffini_division(b)?;
-        let x_degree = self.x_degree.saturating_sub(1);
-        let y_degree = self.y_degree;
     
-        // 각 row 정규화
-        let normalized_rows: Vec<_> = q_xy_rows
-            .into_iter()
-            .map(|row| {
-                let mut coeffs = row.get_coefficients();
-                coeffs.resize(x_degree + 1, ScalarField::zero());
-                DensePolynomial::from_coeffs(
-                    HostSlice::from_slice(&coeffs),
-                    coeffs.len()
-                )
-            })
-            .collect();
+        // x_degree 하나 줄인 몫 bivariate
+        let x_degree = self.x_degree.saturating_sub(1);
+        let mut normalized_rows = Vec::new();
+        for mut row in q_xy_rows {
+            let mut cfs = row.get_coefficients();
+            while cfs.len() <= x_degree {
+                cfs.push(ScalarField::zero());
+            }
+            cfs.truncate(x_degree + 1);
+            normalized_rows.push(DensePolynomial::from_coeffs(
+                HostSlice::from_slice(&cfs),
+                cfs.len()
+            ));
+        }
     
         Ok((
-            Self {
+            BivariatePolynomial {
                 coefficients: normalized_rows,
                 x_degree,
-                y_degree,
+                y_degree: self.y_degree,
             },
             q_y
         ))
     }
 
+    /// (x_factor, y_factor)로 스케일링
+    ///  = Σ_i [ (RowPoly in x) * (x_factor^j) * (y_factor^i) ]
     pub fn scale(&self, x_factor: &ScalarField, y_factor: &ScalarField) -> Self {
-        let mut scaled_coefficients = Vec::with_capacity(self.coefficients.len());
-    
+        let mut scaled_coeffs = Vec::with_capacity(self.coefficients.len());
+
         for (i, row_poly) in self.coefficients.iter().enumerate() {
-            // y^i 항의 계수에 (y_factor)^i를 곱함
-            let mut y_power = ScalarField::one();
+            let mut y_pow = ScalarField::one();
             for _ in 0..i {
-                y_power = y_power * *y_factor;
+                y_pow = y_pow * *y_factor;
             }
-    
-            let row_coeffs = row_poly.get_coefficients();
-            let mut scaled_row = Vec::with_capacity(self.x_degree + 1);
-    
-            for (j, coeff) in row_coeffs.iter().enumerate() {
-                // x^j 항의 계수에 (x_factor)^j를 곱함
-                let mut x_power = ScalarField::one();
+
+            let row = row_poly.get_coefficients();
+            let mut new_row = Vec::with_capacity(row.len());
+            for (j, &coeff) in row.iter().enumerate() {
+                let mut x_pow = ScalarField::one();
                 for _ in 0..j {
-                    x_power = x_power * *x_factor;
+                    x_pow = x_pow * *x_factor;
                 }
-                scaled_row.push(*coeff * y_power * x_power);
+                new_row.push(coeff * y_pow * x_pow);
             }
-    
-            while scaled_row.len() <= self.x_degree {
-                scaled_row.push(ScalarField::zero());
-            }
-    
-            scaled_coefficients.push(
+
+            scaled_coeffs.push(
                 DensePolynomial::from_coeffs(
-                    HostSlice::from_slice(&scaled_row),
-                    scaled_row.len()
+                    HostSlice::from_slice(&new_row),
+                    new_row.len()
                 )
             );
         }
-    
-        Self {
-            coefficients: scaled_coefficients,
+
+        BivariatePolynomial {
+            coefficients: scaled_coeffs,
             x_degree: self.x_degree,
             y_degree: self.y_degree,
+        }
+    }
+}
+
+// ------------------------------------------------------------------------
+// 연산자 오버로드(Add, Sub)를 통해 이차 다항식 덧셈/뺄셈
+// ------------------------------------------------------------------------
+impl Add for BivariatePolynomial {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut result_coeffs = Vec::with_capacity(self.coefficients.len().max(other.coefficients.len()));
+
+        for i in 0..result_coeffs.capacity() {
+            let zero_poly = DensePolynomial::zero();
+            let spoly = self.coefficients.get(i).unwrap_or(&zero_poly);
+            let opoly = other.coefficients.get(i).unwrap_or(&zero_poly);
+            result_coeffs.push(spoly.add_polynomial(opoly));
+        }
+
+        BivariatePolynomial {
+            coefficients: result_coeffs,
+            x_degree: self.x_degree.max(other.x_degree),
+            y_degree: self.y_degree.max(other.y_degree),
+        }
+    }
+}
+
+impl Sub for BivariatePolynomial {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        let mut result_coeffs = Vec::with_capacity(self.coefficients.len().max(other.coefficients.len()));
+
+        for i in 0..result_coeffs.capacity() {
+            let zero_poly = DensePolynomial::zero();
+            let spoly = self.coefficients.get(i).unwrap_or(&zero_poly);
+            let opoly = other.coefficients.get(i).unwrap_or(&zero_poly);
+
+            // opoly에 -1을 곱해서 spoly와 add
+            let neg_opoly = opoly.scale(&ScalarField::zero().sub(ScalarField::one())); // -1
+            result_coeffs.push(spoly.add_polynomial(&neg_opoly));
+        }
+
+        BivariatePolynomial {
+            coefficients: result_coeffs,
+            x_degree: self.x_degree.max(other.x_degree),
+            y_degree: self.y_degree.max(other.y_degree),
         }
     }
 }
