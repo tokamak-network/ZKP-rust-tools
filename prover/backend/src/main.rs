@@ -1,6 +1,9 @@
 ﻿ mod permutaion; 
  mod commands;
  mod wasm;
+ mod fnv;
+ mod error;
+
  use clap::{Args, Parser, Subcommand};
 
 

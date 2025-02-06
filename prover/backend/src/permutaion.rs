@@ -1,5 +1,4 @@
-﻿
-use clap::Error;
+﻿use clap::Error;
 use lambdaworks_math::{
     field::traits::{IsField},
     polynomial::Polynomial as UnivariatePolynomial,
@@ -9,34 +8,39 @@ use lambdaworks_math::{
 
 use wasmer::{Store, Module, Instance, Value, imports};
 
-use serde::{Deserialize};
+use serde::{Deserialize,Serialize};
 
 const wasm_dir :&str = "subcircuits/wasm";
 
 
 // This struct represent the permutation map for inter subcircuit wires. 
 // this function is useful to create B(Y,Z) which is necessary for copy constraint part. 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct PermutationRule {
-    // #[serde(rename = "row")] 
+    #[serde(rename = "row")] 
     y: i32,
-    // #[serde(rename = "col")]
+    #[serde(rename = "col")]
     z: i32,
-    // #[serde(rename = "Y")] 
+    #[serde(rename = "Y")] 
     py: i32,
-    // #[serde(rename = "Z")]
+    #[serde(rename = "Z")]
     pz: i32,
 }
 
 
 // This struct is help full to find which instances called respectively, and what was the input and output. 
 // Should import this to respected wasm files to generate witnesses. 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize,Debug)]
 pub struct PlacementInstance {
+    #[serde(rename = "placementIndex")]
     pub placement_index: i32,     // Maps to "placementIndex" in JSON
+    #[serde(rename = "subcircuitId")]
     pub subcircuit_id: i32,       // Maps to "subcircuitId" in JSON
+    #[serde(rename = "instructionName")] 
     pub instruction_name: String, // Maps to "instructionName" in JSON
+    #[serde(rename = "inValues")] 
     pub in_values: Vec<String>,   // Maps to "inValues" in JSON
+    #[serde(rename = "outValues")] 
     pub out_values: Vec<String>,  // Maps to "outValues" in JSON
 }
 
