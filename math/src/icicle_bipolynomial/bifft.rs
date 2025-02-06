@@ -276,11 +276,26 @@ mod tests {
     #[test]
     fn test_multiply_bivariates() {
         initialize_ntt_domain();
+        let a_times_b = BivariatePolynomial::new(vec![
+            vec![ScalarField::from_u32(3), ScalarField::from_u32(7), ScalarField::from_u32(2), ScalarField::from_u32(0)],
+            vec![ScalarField::from_u32(9), ScalarField::from_u32(17), ScalarField::from_u32(9), ScalarField::from_u32(2)],
+            vec![ScalarField::from_u32(0), ScalarField::from_u32(10), ScalarField::from_u32(19), ScalarField::from_u32(4)],
+            vec![ScalarField::from_u32(0), ScalarField::from_u32(12), ScalarField::from_u32(16), ScalarField::from_u32(0)]
+        ]); 
+
         let a = polynomial_a();
         let b = polynomial_b();
 
-        let _res = BivariatePolynomial::test_multiply_bivariates(&a, &b)
+        let mul_eval = BivariatePolynomial::test_multiply_bivariates(&a, &b)
             .expect("NTT multiply fail");
+        // let a_evals =  BivariatePolynomial::evaluate_ntt(&polynomial_a(), 1, 1, Some(4), Some(4)).unwrap();
+        // let b_evals = BivariatePolynomial::evaluate_ntt(&polynomial_b(), 1, 1,  Some(4), Some(4)).unwrap();
+
+        let mul_poly = BivariatePolynomial::interpolate_ntt(&mul_eval.coefficients).unwrap();
+        for (mul_poly_row, a_times_b_row) in mul_poly.coefficients.iter().zip(a_times_b.coefficients.iter()) {
+            assert_eq!(mul_poly_row.get_coefficients(), a_times_b_row.get_coefficients());
+        }
+
         println!("test_multiply_bivariates finished successfully!");
     }
 }
