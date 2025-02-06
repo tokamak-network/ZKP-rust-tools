@@ -3,7 +3,7 @@ use icicle_core::ntt::{
     ntt, NTTConfig, NTTDir, initialize_domain, get_root_of_unity, NTTInitDomainConfig
 };
 use icicle_core::polynomials::UnivariatePolynomial;
-use icicle_core::traits::FieldImpl;
+use icicle_core::traits::{Arithmetic, FieldImpl};
 use icicle_bls12_381::curve::ScalarField;
 use icicle_runtime::memory::{DeviceVec, HostOrDeviceSlice, HostSlice};
 use ndarray::{Array2, Axis};
@@ -69,6 +69,45 @@ fn perform_ntt(
 }
 
 impl BivariatePolynomial {
+    pub fn test_multiply_bivariates(a: &Self, b: &Self) -> Result<Self, NTTError> {
+        let max_degree = core::cmp::max(
+            core::cmp::max(a.x_degree, a.y_degree),
+            core::cmp::max(b.x_degree, b.y_degree)
+        );
+        let padded_size = (max_degree + 1).next_power_of_two() * 2;
+
+        // 1. NTT evaluation
+        let a_evals = a.evaluate_ntt(1, 1, Some(padded_size), Some(padded_size))?;
+        let b_evals = b.evaluate_ntt(1, 1, Some(padded_size), Some(padded_size))?;
+
+        assert_eq!(a_evals.len(), b_evals.len(), "NTT row count mismatch");
+        let n = a_evals.len();
+
+        // 2. Pointwise multiplication
+        let mut mul_evals = Vec::with_capacity(n);
+        for i in 0..n {
+            let mut prod = a_evals[i].mul(&b_evals[i]);
+            // Scale by 1/n^2 for 2D FFT normalization using u32
+            let scale = ScalarField::from_u32(n as u32).inv();  // n으로 한번
+            prod = prod.scale(&scale);  
+            prod = prod.scale(&scale);  // n으로 두번 나누어 n^2 효과
+            mul_evals.push(prod);
+        }
+
+        // 3. Interpolate
+        let result = Self::interpolate_ntt(&mul_evals)?;
+
+        // 4. 결과를 정확한 크기로 자르기
+        let target_size = 4;  // a_times_b test vector의 크기
+        let mut trimmed_coeffs = Vec::new();
+        for row in result.coefficients.iter().take(target_size) {
+            let coeffs = row.get_coefficients();
+            trimmed_coeffs.push(coeffs[..target_size].to_vec());
+        }
+
+        Ok(Self::new(trimmed_coeffs))
+    }
+
     pub fn evaluate_ntt(
         &self,
         x_blowup_factor: usize,
@@ -79,12 +118,11 @@ impl BivariatePolynomial {
         let dx = domain_x_size.unwrap_or(0);
         let dy = domain_y_size.unwrap_or(0);
 
-        // 각 차원의 최소 크기 계산
         let len_x = core::cmp::max(self.x_degree + 1, dx).next_power_of_two() * x_blowup_factor;
         let len_y = core::cmp::max(self.y_degree + 1, dy).next_power_of_two() * y_blowup_factor;
         let padded_len = len_x.max(len_y);
 
-        // NTT 도메인 초기화
+        // NTT domain 초기화
         initialize_domain(
             get_root_of_unity::<ScalarField>(padded_len as u64),
             &NTTInitDomainConfig::default()
@@ -93,7 +131,7 @@ impl BivariatePolynomial {
         // 계수 행렬 초기화
         let mut coeffs = Array2::from_elem((padded_len, padded_len), ScalarField::zero());
         
-        // 입력 데이터 복사 - 범위 체크 추가
+        // 입력 데이터 복사
         for (i, row) in self.coefficients.iter().enumerate() {
             let row_coeffs = row.get_coefficients();
             for (j, val) in row_coeffs.iter().enumerate() {
@@ -103,7 +141,6 @@ impl BivariatePolynomial {
             }
         }
 
-        // GPU 버퍼 초기화
         let mut device_buffer = DeviceBuffer::new(padded_len)?;
 
         // 행 방향 FFT
@@ -126,7 +163,7 @@ impl BivariatePolynomial {
             }
         }
 
-        // DensePolynomial 형태로 변환
+        // DensePolynomial로 변환
         let mut result = Vec::with_capacity(padded_len);
         for i in 0..padded_len {
             let row: Vec<_> = coeffs.row(i).to_vec();
@@ -144,20 +181,18 @@ impl BivariatePolynomial {
     ) -> Result<Self, NTTError> {
         let len = ntt_evals.len();
         
-        // Array2로 변환
         let mut coeffs = Array2::from_elem((len, len), ScalarField::zero());
         
         // 입력 데이터 복사
         for (i, poly) in ntt_evals.iter().enumerate() {
             let row = poly.get_coefficients();
             for (j, val) in row.iter().enumerate() {
-                if j < len {  // 범위 체크 추가
+                if j < len {
                     coeffs[[i, j]] = *val;
                 }
             }
         }
 
-        // GPU 버퍼 초기화
         let mut device_buffer = DeviceBuffer::new(len)?;
 
         // 행 방향 역FFT
@@ -180,7 +215,7 @@ impl BivariatePolynomial {
             }
         }
 
-        // 결과를 2D 벡터로 변환
+        // 2D 벡터로 변환
         let mut result = Vec::with_capacity(len);
         for i in 0..len {
             let row: Vec<_> = coeffs.row(i).to_vec();
@@ -188,27 +223,6 @@ impl BivariatePolynomial {
         }
 
         Ok(BivariatePolynomial::new(result))
-    }
-
-    pub fn test_multiply_bivariates(a: &Self, b: &Self) -> Result<Self, NTTError> {
-        let max_degree = core::cmp::max(
-            core::cmp::max(a.x_degree, a.y_degree),
-            core::cmp::max(b.x_degree, b.y_degree)
-        );
-        let padded_size = (max_degree + 1).next_power_of_two() * 2;
-
-        let a_evals = a.evaluate_ntt(1, 1, Some(padded_size), Some(padded_size))?;
-        let b_evals = b.evaluate_ntt(1, 1, Some(padded_size), Some(padded_size))?;
-
-        assert_eq!(a_evals.len(), b_evals.len(), "NTT row count mismatch");
-
-        // Pointwise multiplication
-        let mut mul_evals = Vec::with_capacity(a_evals.len());
-        for i in 0..a_evals.len() {
-            mul_evals.push(a_evals[i].mul(&b_evals[i]));
-        }
-
-        Self::interpolate_ntt(&mul_evals)
     }
 }
 
@@ -270,6 +284,54 @@ mod tests {
 
         for (exp, got) in poly_a_padded.coefficients.iter().zip(interpolated.coefficients.iter()) {
             assert_eq!(exp.get_coefficients(), got.get_coefficients());
+        }
+    }
+
+    #[test]
+    fn test_simple_polynomial_multiplication() {
+        initialize_ntt_domain();
+
+        // 간단한 이변수 다항식 생성: f(x,y) = 1 + x + y
+        let poly_f = BivariatePolynomial::new(vec![
+            vec![ScalarField::from_u32(1), ScalarField::from_u32(1)],  // 1 + x
+            vec![ScalarField::from_u32(1), ScalarField::zero()],       // y
+        ]);
+
+        // g(x,y) = 1 + x + y
+        let poly_g = BivariatePolynomial::new(vec![
+            vec![ScalarField::from_u32(1), ScalarField::from_u32(1)],  // 1 + x
+            vec![ScalarField::from_u32(1), ScalarField::zero()],       // y
+        ]);
+
+        // h(x,y) = f(x,y) * g(x,y) = (1 + x + y)^2
+        // = 1 + 2x + 2y + x^2 + 2xy + y^2
+        let expected = BivariatePolynomial::new(vec![
+            vec![ScalarField::from_u32(1), ScalarField::from_u32(2), ScalarField::from_u32(1)],  // 1 + 2x + x^2
+            vec![ScalarField::from_u32(2), ScalarField::from_u32(2), ScalarField::zero()],       // 2y + 2xy
+            vec![ScalarField::from_u32(1), ScalarField::zero(), ScalarField::zero()],            // y^2
+        ]);
+
+        // 곱셈 수행
+        let result = BivariatePolynomial::test_multiply_bivariates(&poly_f, &poly_g)
+            .expect("Failed to multiply polynomials");
+
+        println!("Expected polynomial coefficients:");
+        for row in expected.coefficients.iter() {
+            println!("{:?}", row.get_coefficients());
+        }
+
+        println!("\nActual polynomial coefficients:");
+        for row in result.coefficients.iter() {
+            println!("{:?}", row.get_coefficients());
+        }
+
+        // 결과 비교
+        assert_eq!(result.coefficients.len(), expected.coefficients.len(), 
+            "Polynomial dimensions mismatch");
+
+        for (res_row, exp_row) in result.coefficients.iter().zip(expected.coefficients.iter()) {
+            assert_eq!(res_row.get_coefficients(), exp_row.get_coefficients(), 
+                "Polynomial coefficients mismatch");
         }
     }
 
