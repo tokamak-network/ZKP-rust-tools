@@ -169,7 +169,6 @@ mod tests {
         (fft_eval, naive_eval)
     }
 
-
     mod u64_field_tests {
         use super::*;
         use lambdaworks_math::{fft, field::test_fields::u64_test_field::U64TestField, msm::naive};
