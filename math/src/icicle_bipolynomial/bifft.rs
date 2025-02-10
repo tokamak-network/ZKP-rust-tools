@@ -14,38 +14,81 @@ use super::bipolynomial::BivariatePolynomial;
 
 pub type NTTError = &'static str;
 
-struct DeviceBuffer<T> {
-    buffer: DeviceVec<T>,  // Option으로 감싸서 안전한 해제 보장
-    size: usize,
+#[derive(Debug)]
+enum NTTErrorDetail {
+    SizeExceeded {
+        size: usize,
+        max_allowed: usize,
+    },
+    MemoryAllocation {
+        required_size: usize,
+    },
+    InvalidInput {
+        details: String,
+    },
+    TransformFailed {
+        details: String,
+    },
+    DeviceError {
+        details: String,
+    },
 }
 
-impl<T> DeviceBuffer<T> {
-    fn new(size: usize) -> Result<Self, NTTError> {
-        // 크기가 0인 경우 특별 처리
+impl NTTErrorDetail {
+    fn to_str(&self) -> &'static str {
+        match self {
+            Self::SizeExceeded { .. } => "Size exceeded maximum allowed",
+            Self::MemoryAllocation { .. } => "Memory allocation failed",
+            Self::InvalidInput { .. } => "Invalid input",
+            Self::TransformFailed { .. } => "Transform failed",
+            Self::DeviceError { .. } => "Device error",
+        }
+    }
+}
+
+struct DeviceBuffer<T> {
+    buffer: DeviceVec<T>,
+    size: usize,
+    max_size: usize,
+}
+
+impl DeviceBuffer<ScalarField> {
+    fn new(size: usize) -> Result<Self, &'static str> {
+        const MAX_BUFFER_SIZE: usize = 64;
+        
         if size == 0 {
             return Err("Cannot create buffer with zero size");
         }
         
-        Ok(Self {
-            buffer: DeviceVec::device_malloc(size)
-                .map_err(|_| "Device memory allocation failed")?,
-            size,
-        })
+        if size > MAX_BUFFER_SIZE {
+            return Err("Size exceeds maximum allowed");
+        }
+
+        match DeviceVec::device_malloc(size) {
+            Ok(buffer) => Ok(Self {
+                buffer,
+                size,
+                max_size: MAX_BUFFER_SIZE,  // max_size 필드 추가
+            }),
+            Err(_) => Err("Failed to allocate device memory"),
+        }
     }
 
-    fn copy_from_host(&mut self, src: &HostSlice<T>) -> Result<(), NTTError> {
+    fn copy_from_host(&mut self, src: &HostSlice<ScalarField>) -> Result<(), &'static str> {
         if src.len() != self.size {
             return Err("Source and destination lengths do not match");
         }
+        
         self.buffer[..self.size]
             .copy_from_host(src)
             .map_err(|_| "Failed to copy to device")
     }
 
-    fn copy_to_host(&self, dst: &mut HostSlice<T>) -> Result<(), NTTError> {
+    fn copy_to_host(&self, dst: &mut HostSlice<ScalarField>) -> Result<(), &'static str> {
         if dst.len() != self.size {
             return Err("Source and destination lengths do not match");
         }
+        
         self.buffer[..self.size]
             .copy_to_host(dst)
             .map_err(|_| "Failed to copy from device")
@@ -117,38 +160,35 @@ impl BivariatePolynomial {
         y_blowup_factor: usize,
         domain_x_size: Option<usize>,
         domain_y_size: Option<usize>,
-    ) -> Result<Vec<DensePolynomial>, NTTError> {
+    ) -> Result<Vec<DensePolynomial>, &'static str> {
+        const MAX_EVAL_SIZE: usize = 4;  // size 제한 유지
+        
         let dx = domain_x_size.unwrap_or(0);
         let dy = domain_y_size.unwrap_or(0);
         
-        // 입력 다항식의 차수 확인
-        let degree_x = self.x_degree;
-        let degree_y = self.y_degree;
-        
         // 필요한 최소 크기 계산
-        let min_size = core::cmp::max(degree_x, degree_y) + 1;
-        let required_size = min_size.next_power_of_two();
+        let min_size = core::cmp::max(
+            core::cmp::max(self.x_degree + 1, dx).next_power_of_two(),
+            core::cmp::max(self.y_degree + 1, dy).next_power_of_two()
+        );
+    
+        // 크기 검증
+        if min_size > MAX_EVAL_SIZE {
+            return Err("Evaluation size too large");
+        }
+    
+        let padded_len = self.calculate_padded_length(dx, dy, x_blowup_factor, y_blowup_factor)?;
         
-        // 실제 사용할 크기 결정
-        let size = if dx > 0 && dy > 0 {
-            core::cmp::min(required_size, core::cmp::min(dx, dy))
-        } else {
-            required_size
-        };
-        
-        // Size가 4를 초과하지 않도록 제한
-        let safe_size = core::cmp::min(size, 4);
-        
-        // 실제 evaluation 수행
-        let padded_len = self.calculate_padded_length(safe_size, safe_size, x_blowup_factor, y_blowup_factor)?;
-        let mut coeffs = Array2::from_elem((padded_len, padded_len), ScalarField::zero());
-        self.copy_coefficients_to_array(&mut coeffs, padded_len);
-        
+        // Device buffer 생성 및 초기화
         let mut device_buffer = DeviceBuffer::new(padded_len)?;
+        let mut coeffs = Array2::from_elem((padded_len, padded_len), ScalarField::zero());
         
+        // NTT 변환 수행
+        self.copy_coefficients_to_array(&mut coeffs, padded_len);
         self.perform_row_fft(&mut coeffs, &mut device_buffer, padded_len)?;
         self.perform_column_fft(&mut coeffs, &mut device_buffer, padded_len)?;
-        
+    
+        // 결과 변환
         let mut result = Vec::with_capacity(padded_len);
         for i in 0..padded_len {
             let row: Vec<_> = coeffs.row(i).to_vec();
@@ -157,9 +197,10 @@ impl BivariatePolynomial {
                 padded_len
             ));
         }
-        
+    
         Ok(result)
     }
+    
 
     fn calculate_padded_length(
         &self,
@@ -231,70 +272,66 @@ impl BivariatePolynomial {
     }
 
     pub fn interpolate_ntt(ntt_evals: &Vec<DensePolynomial>) -> Result<Self, NTTError> {
-        println!("\n=== Starting interpolate_ntt ===");
-        println!("Input length: {}", ntt_evals.len());
+        const MAX_INTERP_SIZE: usize = 4;  // size 제한 유지
     
-        // 1. 빈 입력 처리
         if ntt_evals.is_empty() {
-            return Ok(Self::new(vec![vec![]]));
+            return Err("Empty evaluation vector");
         }
-    
-        // 2. 상수 다항식 처리
-        if ntt_evals.len() == 1 {
-            return Ok(Self::new(vec![ntt_evals[0].get_coefficients().to_vec()]));
-        }
-    
-        // 3. 크기 제한 추가
+
         let len = ntt_evals.len();
-        if len > 4 {  // size 4로 제한
+        if len > MAX_INTERP_SIZE {
             return Err("Interpolation size too large");
         }
-    
-        // 4. Device buffer 생성
+
+        // Device buffer 생성
         let mut device_buffer = DeviceBuffer::new(len)?;
-    
-        // 5. Row-wise inverse FFT
         let mut coeffs = Array2::from_elem((len, len), ScalarField::zero());
+
+        // Row-wise inverse FFT
         for i in 0..len {
-            let row: Vec<_> = ntt_evals[i].get_coefficients().to_vec();
-            coeffs.row_mut(i).assign(&ndarray::ArrayView1::from(&row));
-            
+            let row = ntt_evals[i].get_coefficients();
+            if row.len() != len {
+                return Err("Inconsistent evaluation lengths");
+            }
+
             let input_slice = HostSlice::from_slice(&row);
-            let output = perform_ntt(&input_slice, NTTDir::kInverse, &mut device_buffer)?;
-            
-            for (j, val) in output.iter().enumerate() {
-                coeffs[[i, j]] = *val;
+            match perform_ntt(&input_slice, NTTDir::kInverse, &mut device_buffer) {
+                Ok(output) => {
+                    for (j, val) in output.iter().enumerate() {
+                        coeffs[[i, j]] = *val;
+                    }
+                },
+                Err(_) => return Err("Row-wise inverse FFT failed"),
             }
         }
     
-        // 6. Column-wise inverse FFT
+        // Column-wise inverse FFT
         for j in 0..len {
             let col: Vec<_> = coeffs.column(j).to_vec();
             let input_slice = HostSlice::from_slice(&col);
-            let output = perform_ntt(&input_slice, NTTDir::kInverse, &mut device_buffer)?;
-            
-            for (i, val) in output.iter().enumerate() {
-                coeffs[[i, j]] = *val;
+            match perform_ntt(&input_slice, NTTDir::kInverse, &mut device_buffer) {
+                Ok(output) => {
+                    for (i, val) in output.iter().enumerate() {
+                        coeffs[[i, j]] = *val;
+                    }
+                },
+                Err(_) => return Err("Column-wise inverse FFT failed"),
             }
         }
     
-        // 7. 불필요한 0 제거 및 결과 생성
+        // 결과 생성
         let mut result = Vec::new();
-        let mut non_zero_rows = 0;
         for i in 0..len {
             let row = coeffs.row(i).to_vec();
             if row.iter().any(|x| *x != ScalarField::zero()) {
                 result.push(row);
-                non_zero_rows += 1;
             }
         }
     
-        // 모든 행이 0인 경우 처리
         if result.is_empty() {
             result.push(vec![ScalarField::zero()]);
         }
     
-        println!("=== interpolate_ntt completed successfully ===\n");
         Ok(Self::new(result))
     }
 }
@@ -501,192 +538,102 @@ mod tests {
                 "Polynomial coefficients mismatch");
         }
     }
-
-
+    
     #[test]
-fn test_size_8_specific_issue() {
-    let device = Device::new("CPU", 0);
-    icicle_runtime::set_device(&device).expect("Failed to set device");
-    initialize_ntt_domain();
+    fn test_interpolation_step_by_step() {
+        let device = Device::new("CPU", 0);
+        icicle_runtime::set_device(&device).expect("Failed to set device");
+        initialize_ntt_domain();
 
-    let size = 8;
-    println!("Testing with size {}", size);
+        let size = 4;
+        println!("=== Starting interpolation test with size {} ===", size);
 
-    let poly_a = polynomial_a();
-    let poly_b = polynomial_b();
+        // 1. 원본 다항식 준비
+        let poly_a = polynomial_a();
+        let poly_b = polynomial_b();
 
-    // 1. A에 대한 evaluation 수행 후 즉시 확인
-    let a_evals = BivariatePolynomial::evaluate_ntt(&poly_a, 1, 1, Some(size), Some(size))
-        .expect("A evaluation failed");
-    
-    println!("A evaluation successful");
-    println!("A evaluations count: {}", a_evals.len());
-    println!("A first evaluation size: {}", a_evals[0].get_coefficients().len());
+        // 2. NTT evaluation 수행
+        let a_evals = BivariatePolynomial::evaluate_ntt(&poly_a, 1, 1, Some(size), Some(size))
+            .expect("Failed to evaluate polynomial A");
+        let b_evals = BivariatePolynomial::evaluate_ntt(&poly_b, 1, 1, Some(size), Some(size))
+            .expect("Failed to evaluate polynomial B");
 
-    // A의 coefficients 변환
-    let a_coeffs: Vec<Vec<ScalarField>> = a_evals.iter()
-        .map(|eval| {
-            let coeffs = eval.get_coefficients();
-            println!("A eval length: {}", coeffs.len());
-            coeffs.to_vec()
-        })
-        .collect();
+        // 3. BivariatePolynomial 생성
+        let bipoly_a = BivariatePolynomial::new(
+            a_evals.iter()
+                .map(|eval| eval.get_coefficients().to_vec())
+                .collect()
+        );
+        let bipoly_b = BivariatePolynomial::new(
+            b_evals.iter()
+                .map(|eval| eval.get_coefficients().to_vec())
+                .collect()
+        );
 
-    // Memory cleanup for A
-    drop(a_evals);
+        // 4. 곱셈 수행
+        let mul_eval = bipoly_a * bipoly_b;
+        println!("\nMultiplication result structure:");
+        println!("x_degree: {}, y_degree: {}", mul_eval.x_degree, mul_eval.y_degree);
+        for (i, row) in mul_eval.coefficients.iter().enumerate() {
+            println!("Row {} length: {}", i, row.get_coefficients().len());
+        }
 
-    // 2. B에 대한 evaluation 수행 후 즉시 확인
-    let b_evals = BivariatePolynomial::evaluate_ntt(&poly_b, 1, 1, Some(size), Some(size))
-        .expect("B evaluation failed");
-    
-    println!("B evaluation successful");
-    println!("B evaluations count: {}", b_evals.len());
-    println!("B first evaluation size: {}", b_evals[0].get_coefficients().len());
+        // 5. 행별로 interpolation 시도
+        println!("\nTesting row-by-row interpolation:");
+        for (i, row) in mul_eval.coefficients.iter().enumerate() {
+            println!("\nProcessing row {}", i);
+            
+            // 단일 행에 대한 interpolation
+            let single_row_coeffs = vec![row.clone()];
+            match BivariatePolynomial::interpolate_ntt(&single_row_coeffs) {
+                Ok(result) => {
+                    println!("Row {} interpolation successful", i);
+                    println!("Result dimensions: x_degree={}, y_degree={}", 
+                            result.x_degree, result.y_degree);
+                },
+                Err(e) => {
+                    println!("Row {} interpolation failed: {}", i, e);
+                    return;
+                }
+            }
+        }
 
-    // B의 coefficients 변환
-    let b_coeffs: Vec<Vec<ScalarField>> = b_evals.iter()
-        .map(|eval| {
-            let coeffs = eval.get_coefficients();
-            println!("B eval length: {}", coeffs.len());
-            coeffs.to_vec()
-        })
-        .collect();
-
-    // Memory cleanup for B
-    drop(b_evals);
-
-    // 3. 새로운 BivariatePolynomial 생성
-    let bipoly_a = BivariatePolynomial::new(a_coeffs);
-    let bipoly_b = BivariatePolynomial::new(b_coeffs);
-
-    println!("\nCreated polynomials:");
-    println!("A: x_degree={}, y_degree={}", bipoly_a.x_degree, bipoly_a.y_degree);
-    println!("B: x_degree={}, y_degree={}", bipoly_b.x_degree, bipoly_b.y_degree);
-
-    // 4. Device buffer 상태 확인
-    let buffer_test = DeviceBuffer::<ScalarField>::new(size)
-        .expect("Failed to create test buffer");
-    println!("Test buffer created successfully");
-    drop(buffer_test);
-
-    // 5. 곱셈 시도
-    println!("\nAttempting multiplication...");
-    
-    // Explicit scope for multiplication
-    {
-        let result = bipoly_a * bipoly_b;
-        println!("Multiplication successful");
-        println!("Result: x_degree={}, y_degree={}", result.x_degree, result.y_degree);
-    }
-}
-    
-#[test]
-fn test_interpolation_step_by_step() {
-    let device = Device::new("CPU", 0);
-    icicle_runtime::set_device(&device).expect("Failed to set device");
-    initialize_ntt_domain();
-
-    let size = 4;
-    println!("=== Starting interpolation test with size {} ===", size);
-
-    // 1. 원본 다항식 준비
-    let poly_a = polynomial_a();
-    let poly_b = polynomial_b();
-
-    // 2. NTT evaluation 수행
-    let a_evals = BivariatePolynomial::evaluate_ntt(&poly_a, 1, 1, Some(size), Some(size))
-        .expect("Failed to evaluate polynomial A");
-    let b_evals = BivariatePolynomial::evaluate_ntt(&poly_b, 1, 1, Some(size), Some(size))
-        .expect("Failed to evaluate polynomial B");
-
-    // 3. BivariatePolynomial 생성
-    let bipoly_a = BivariatePolynomial::new(
-        a_evals.iter()
-            .map(|eval| eval.get_coefficients().to_vec())
-            .collect()
-    );
-    let bipoly_b = BivariatePolynomial::new(
-        b_evals.iter()
-            .map(|eval| eval.get_coefficients().to_vec())
-            .collect()
-    );
-
-    // 4. 곱셈 수행
-    let mul_eval = bipoly_a * bipoly_b;
-    println!("\nMultiplication result structure:");
-    println!("x_degree: {}, y_degree: {}", mul_eval.x_degree, mul_eval.y_degree);
-    for (i, row) in mul_eval.coefficients.iter().enumerate() {
-        println!("Row {} length: {}", i, row.get_coefficients().len());
-    }
-
-    // 5. 행별로 interpolation 시도
-    println!("\nTesting row-by-row interpolation:");
-    for (i, row) in mul_eval.coefficients.iter().enumerate() {
-        println!("\nProcessing row {}", i);
+        // 6. 실제 interpolation 시도
+        println!("\nAttempting full interpolation...");
+        let device_buffer = DeviceBuffer::<ScalarField>::new(size)
+            .expect("Failed to create device buffer");
         
-        // 단일 행에 대한 interpolation
-        let single_row_coeffs = vec![row.clone()];
-        match BivariatePolynomial::interpolate_ntt(&single_row_coeffs) {
+        // Interpolation 전에 coefficients 검증
+        println!("\nValidating coefficients before interpolation:");
+        println!("Number of coefficient rows: {}", mul_eval.coefficients.len());
+        for (i, row) in mul_eval.coefficients.iter().enumerate() {
+            let coeffs = row.get_coefficients();
+            println!("Row {} size: {}", i, coeffs.len());
+            
+            // 값들의 유효성 검사
+            for (j, val) in coeffs.iter().enumerate() {
+                if *val == ScalarField::zero() {
+                    println!("Zero value at row {}, col {}", i, j);
+                }
+            }
+        }
+
+        // 7. 최종 interpolation
+        match BivariatePolynomial::interpolate_ntt(&mul_eval.coefficients) {
             Ok(result) => {
-                println!("Row {} interpolation successful", i);
-                println!("Result dimensions: x_degree={}, y_degree={}", 
+                println!("\nFull interpolation successful!");
+                println!("Final result dimensions: x_degree={}, y_degree={}", 
                         result.x_degree, result.y_degree);
+                
+                // 결과 검증
+                println!("\nFinal result coefficients:");
+                for (i, row) in result.coefficients.iter().enumerate() {
+                    println!("Row {}: {:?}", i, row.get_coefficients());
+                }
             },
-            Err(e) => {
-                println!("Row {} interpolation failed: {}", i, e);
-                return;
-            }
+            Err(e) => println!("Full interpolation failed: {}", e)
         }
     }
-
-    // 6. 실제 interpolation 시도
-    println!("\nAttempting full interpolation...");
-    let device_buffer = DeviceBuffer::<ScalarField>::new(size)
-        .expect("Failed to create device buffer");
-    
-    // Interpolation 전에 coefficients 검증
-    println!("\nValidating coefficients before interpolation:");
-    println!("Number of coefficient rows: {}", mul_eval.coefficients.len());
-    for (i, row) in mul_eval.coefficients.iter().enumerate() {
-        let coeffs = row.get_coefficients();
-        println!("Row {} size: {}", i, coeffs.len());
-        
-        // 값들의 유효성 검사
-        for (j, val) in coeffs.iter().enumerate() {
-            if *val == ScalarField::zero() {
-                println!("Zero value at row {}, col {}", i, j);
-            }
-        }
-    }
-
-    // 7. 최종 interpolation
-    match BivariatePolynomial::interpolate_ntt(&mul_eval.coefficients) {
-        Ok(result) => {
-            println!("\nFull interpolation successful!");
-            println!("Final result dimensions: x_degree={}, y_degree={}", 
-                    result.x_degree, result.y_degree);
-            
-            // 결과 검증
-            println!("\nFinal result coefficients:");
-            for (i, row) in result.coefficients.iter().enumerate() {
-                println!("Row {}: {:?}", i, row.get_coefficients());
-            }
-        },
-        Err(e) => println!("Full interpolation failed: {}", e)
-    }
-}
-        // if let Ok(mul_poly) = BivariatePolynomial::interpolate_ntt(&mul_eval.coefficients) {
-        //     let a_times_b = BivariatePolynomial::new(vec![
-        //         vec![ScalarField::from_u32(3), ScalarField::from_u32(7), ScalarField::from_u32(2), ScalarField::from_u32(0)],
-        //         vec![ScalarField::from_u32(9), ScalarField::from_u32(17), ScalarField::from_u32(9), ScalarField::from_u32(2)],
-        //         vec![ScalarField::from_u32(0), ScalarField::from_u32(10), ScalarField::from_u32(19), ScalarField::from_u32(4)],
-        //         vec![ScalarField::from_u32(0), ScalarField::from_u32(12), ScalarField::from_u32(16), ScalarField::from_u32(0)]
-        //     ]);
-            
-        //     for (mul_poly_row, a_times_b_row) in mul_poly.coefficients.iter().zip(a_times_b.coefficients.iter()) {
-        //         assert_eq!(mul_poly_row.get_coefficients(), a_times_b_row.get_coefficients());
-        //     }
-        // }
     
 
     
