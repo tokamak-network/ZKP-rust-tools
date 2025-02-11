@@ -26,10 +26,9 @@ pub struct StructuredReferenceString<G1Point, G2Point> {
     pub powers_secondary_group: [G2Point; 3],// 1 , tau, theta 
     // pub converted_g1_points: Vec<Affine<CurveCfg>>
 }
-
-pub type G1Point = ShortWeierstrassProjectivePoint<BLS12381Curve>;
-pub type G2Point = ShortWeierstrassProjectivePoint<BLS12381TwistCurve>;
-
+// X,Y 
+// powers of tau , delta    , [P(tau,delta)]_1 
+ 
 impl<G1Point, G2Point> StructuredReferenceString<G1Point, G2Point>
 where
     G1Point: IsGroup,

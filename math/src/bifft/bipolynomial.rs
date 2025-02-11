@@ -1,8 +1,12 @@
+use core::{default, result};
+
 use lambdaworks_math::fft::errors::FFTError;
 use lambdaworks_math::fft::polynomial::{evaluate_fft_cpu, interpolate_fft_cpu};
 use lambdaworks_math::field::element::FieldElement;
 use lambdaworks_math::field::traits::{IsFFTField, IsField, IsSubFieldOf};
-use ndarray::{Array2, Axis};
+use lambdaworks_math::polynomial::Polynomial;
+use ndarray::{Array2, concatenate, Axis};
+use num_traits::zero;
 
 use crate::bipolynomial::BivariatePolynomial;
 // Change the naming ??? 
@@ -66,7 +70,7 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
         offset_y: &FieldElement<F>,
     ) -> Result<Array2<FieldElement<E>>, FFTError> {
         let scaled = bipoly.scale(offset_x,offset_y);
-        // change the root \zeta 
+        // change the root ζ 
         BivariatePolynomial::evaluate_fft::<F>(&scaled, x_blowup_factor, y_blowup_factor, domain_x_size, domain_y_size)
     }
 
@@ -123,6 +127,183 @@ impl<E: IsField> BivariatePolynomial<FieldElement<E>> {
        // Ok(scaled.scale(&offset_x.inv().unwrap(),&offset_y.inv().unwrap()))
 
     }
+
+    // this polynomial division is gonna calculate division algorithm for p(x,y) 
+    // t_𝑌 (𝑌 ) ∶= 𝑌 𝑐 − 1
+    pub fn coset_division<F: IsFFTField + IsSubFieldOf<E>>(
+        bipoly: &BivariatePolynomial<FieldElement<E>>,
+        degree_x :usize,
+        degree_y :usize) -> Result<(Self,Self), FFTError> {
+        // first check the dimension of polynomial is factor of degree_x and degree_y 
+        
+        // if bipoly degree is not 
+        
+        
+        assert_eq!(bipoly.x_degree % degree_x, 0 ); 
+        assert_eq!(bipoly.y_degree % degree_y, 0 ); 
+        
+
+        let m = bipoly.x_degree / degree_x; 
+        let n = bipoly.y_degree / degree_y; 
+
+        let xi: FieldElement<F> = FieldElement::from(3);
+        let zeta: FieldElement<F> = FieldElement::from(5);
+
+        match (m, n) {
+            (2, 2) => {
+
+                
+                let mut a_prim_coeffs =  Array2::<FieldElement<E>>::default((degree_y, degree_x));
+
+                for i in 0..degree_y {
+                    for j in 0..degree_x {
+                        let mut segment_sum = FieldElement::<E>::zero();
+                        for y in 0..n {
+                            for x in 0..m {
+                                segment_sum = segment_sum + xi.pow(y * degree_y) * bipoly.coefficients.get((y * degree_y + i , x * degree_x + j)).unwrap_or(&FieldElement::<E>::zero());
+                            }
+                        }
+                        a_prim_coeffs[(i,j)] = segment_sum;
+                    }
+                }
+                let a_prim = BivariatePolynomial::new(a_prim_coeffs);
+                let mut r_tilde_evals = BivariatePolynomial::evaluate_offset_fft::<F>(&a_prim, 1, 1, None, None, &FieldElement::<F>::one(), &xi).unwrap();
+
+                let divisor_inv_xi = (xi.pow(degree_y ) - FieldElement::<E>::one()).inv().unwrap(); 
+                
+                r_tilde_evals = r_tilde_evals.map_mut(|elem| elem.clone() * &divisor_inv_xi);
+                let q_tilde_evals = r_tilde_evals; 
+
+                let q_z = BivariatePolynomial::interpolate_offset_fft(&q_tilde_evals, &FieldElement::<F>::one(), &xi).unwrap();
+
+                let q_z_negated_coeffs = q_z.coefficients.mapv(|elem| -elem);
+                
+                let remainder_poly_coefficients = concatenate(Axis(0), &[q_z_negated_coeffs.view(), q_z.coefficients.view()]).unwrap();
+                
+                let remainder_poly = BivariatePolynomial::new(remainder_poly_coefficients);
+
+                let b = bipoly - &remainder_poly;
+
+                let mut b_prim_coeffs = Array2::<FieldElement<E>>::default((n * degree_y, degree_x));
+
+                for i in 0..n * degree_y {
+                    for j in 0..degree_x {
+                        let mut segment_sum = FieldElement::<E>::zero();
+                        for x in 0..m {
+                            segment_sum = segment_sum + zeta.pow(x * degree_x) * b.coefficients.get((i, x * degree_x + j )).unwrap();
+                        }
+                        b_prim_coeffs[(i,j)] = segment_sum;
+                    }
+                }
+
+                let b_prim = BivariatePolynomial::new(b_prim_coeffs); 
+                
+                let mut q_x_tilde_evals = BivariatePolynomial::evaluate_offset_fft(&b_prim, 1, 1, None, None, &zeta, &FieldElement::<F>::one()).unwrap();
+
+                let divisor_inv_zeta = (zeta.pow(degree_x ) - FieldElement::<E>::one()).inv().unwrap(); 
+                
+                q_x_tilde_evals = q_x_tilde_evals.map_mut(|elem| elem.clone() * &divisor_inv_zeta);
+
+                let q_x = BivariatePolynomial::interpolate_offset_fft(&q_x_tilde_evals, &zeta, &FieldElement::<F>::one()).unwrap();
+                Ok((q_z, q_x))
+            },
+            (2, n) if n > 2 => {
+                // Do something else when m is 2 and n is greater than 2
+
+                let mut a_prim_coeffs =  Array2::<FieldElement<E>>::default((n * degree_y, degree_x));
+              
+                for i in 0..n * degree_y {
+                    for j in 0..degree_x {
+                        let mut segment_sum = FieldElement::<E>::zero();
+                        for x in 0..m {
+                            segment_sum = segment_sum + bipoly.coefficients.get((i, x * degree_x + j )).unwrap();
+                        }
+                        a_prim_coeffs[(i,j)] = segment_sum;
+                    }
+                }
+
+                let a_prim = BivariatePolynomial::new(a_prim_coeffs);
+
+                let mut r_tilde_evals = BivariatePolynomial::evaluate_offset_fft::<F>(&a_prim, 1, 1, None, None, &FieldElement::<F>::one(), &xi).unwrap();
+
+                // let mut t_z_coeffs =  Array2::<FieldElement<E>>::default((n * degree_y, degree_x));
+                // t_z_coeffs[(0,0)] = -FieldElement::<E>::one();
+                // t_z_coeffs[(degree_y, 0)] = FieldElement::<E>::one();
+
+                let tz = Polynomial::new_monomial(FieldElement::<E>::one(), degree_y) - FieldElement::<E>::one();
+                let tz_evals = Polynomial::evaluate_offset_fft(&tz, 1, Some(n*degree_y), &xi).unwrap();
+                
+                
+                for (i, mut row) in r_tilde_evals.outer_iter_mut().enumerate() {
+                    let tz_eval_inv = &tz_evals[i].inv().unwrap();
+                    for elem in row.iter_mut() {
+                        *elem = elem.clone() * tz_eval_inv;
+                    }
+                }
+
+                let q_z_tilde_eval =  r_tilde_evals; 
+
+
+                let q_z = BivariatePolynomial::interpolate_offset_fft(&q_z_tilde_eval, &FieldElement::<F>::one(),&xi).unwrap();
+
+                let mut t_z_2d_coeffs = Array2::<FieldElement<E>>::default((n * degree_y, degree_x));
+                t_z_2d_coeffs[(degree_y, 0)] = FieldElement::<E>::one();
+                t_z_2d_coeffs[(0, 0)] = -FieldElement::<E>::one();
+
+                let t_z_2d = BivariatePolynomial::new(t_z_2d_coeffs);
+
+                let r = BivariatePolynomial::poly_multiply::<F>(&q_z, &t_z_2d, m * degree_x, n * degree_y).unwrap();
+
+
+                let b = bipoly - &r ; 
+                
+                let mut b_prim_coeffs = Array2::<FieldElement<E>>::default((n * degree_y, degree_x));
+
+                for i in 0..n * degree_y {
+                    for j in 0..degree_x {
+                        let mut segment_sum = FieldElement::<E>::zero();
+                        for x in 0..m {
+                            segment_sum = segment_sum + zeta.pow(x * degree_x) * b.coefficients.get((i, x * degree_x + j )).unwrap();
+                        }
+                        b_prim_coeffs[(i,j)] = segment_sum;
+                    }
+                }
+
+                let b_prim = BivariatePolynomial::new(b_prim_coeffs); 
+
+                let mut q_x_tilde_evals = BivariatePolynomial::evaluate_offset_fft(&b_prim, 1, 1, None, None, &zeta, &FieldElement::<F>::one()).unwrap();
+                let divisor_inv_zeta = (zeta.pow(degree_x ) - FieldElement::<E>::one()).inv().unwrap(); 
+                
+                q_x_tilde_evals = q_x_tilde_evals.map_mut(|elem| elem.clone() * &divisor_inv_zeta);
+
+                let q_x = BivariatePolynomial::interpolate_offset_fft(&q_x_tilde_evals, &zeta, &FieldElement::<F>::one()).unwrap();
+
+                Ok((q_z, q_x))
+
+            },
+            _ => {
+                // Handle other cases if necessary
+
+                todo!()
+            }
+        }
+
+        // todo!() 
+    }
+    pub fn poly_multiply<F: IsFFTField + IsSubFieldOf<E>>(
+        a: &BivariatePolynomial<FieldElement<E>>,
+        b :&BivariatePolynomial<FieldElement<E>>,
+        result_x_dim :usize,
+        result_y_dim :usize,
+    ) -> Result<Self, FFTError> {
+        let a_evals = BivariatePolynomial::evaluate_fft::<F>(&a, 1, 1, Some(result_x_dim), Some(result_y_dim)).unwrap();
+        let b_evals = BivariatePolynomial::evaluate_fft::<F>(&b, 1, 1, Some(result_x_dim), Some(result_y_dim)).unwrap();
+
+        let c_evals = a_evals * b_evals ; 
+
+        BivariatePolynomial::interpolate_fft::<F>(&c_evals)
+    }
+
 }
 
 #[cfg(test)]
@@ -130,11 +311,12 @@ mod tests {
     use super::*;
     use lambdaworks_math::field::element::FieldElement;
     use lambdaworks_math::field::{
-        // test_fields::u64_test_field::{U64TestField, U64TestFieldExtension},
+        test_fields::u64_test_field::{U64TestField, U64TestFieldExtension},
         traits::RootsConfig,
     };
+    use ndarray::{array, Array, Array1};
 
-    use lambdaworks_math::fft::cpu::roots_of_unity::get_powers_of_primitive_root;
+    use lambdaworks_math::fft::cpu::roots_of_unity::{get_powers_of_primitive_root, get_powers_of_primitive_root_coset};
 
     fn gen_fft_and_naive_evaluation<F: IsFFTField>(
         poly: BivariatePolynomial<FieldElement<F>>,
@@ -156,6 +338,9 @@ mod tests {
         let fft_eval = BivariatePolynomial::evaluate_fft::<F>(&poly, 1,1,None, None).unwrap();
         // let naive_eval = poly.evaluate_slice(&twiddles);
 
+
+
+
         let naive_eval_vec = twiddles_y
             .iter()
             .map(|y_val| {
@@ -168,10 +353,10 @@ mod tests {
         (fft_eval, naive_eval)
     }
 
+
     mod u64_field_tests {
         use super::*;
-        use lambdaworks_math::field::test_fields::u64_test_field::U64TestField;
-        use ndarray::array;
+        use lambdaworks_math::{fft, field::test_fields::u64_test_field::U64TestField, msm::naive};
 
         // FFT related tests
         type F = U64TestField;
@@ -210,7 +395,7 @@ mod tests {
             let a_poly = polynomial_a();
             // let evals = BivariatePolynomial::evaluate_fft::<F>(&a_poly, 1, 1, None, None);
             let (fft_eval, naive_eval) = gen_fft_and_naive_evaluation(a_poly);
-            let naive_copy = naive_eval.clone();
+            let mut naive_copy = naive_eval.clone();
             // naive_copy[[0, 0]] = FE::one();
 
             #[cfg(debug_assertions)]
@@ -255,9 +440,9 @@ mod tests {
             let a_evals =  BivariatePolynomial::evaluate_fft::<F>(&polynomial_a(), 1, 1, Some(4), Some(4)).unwrap();
             
             let b_evals = BivariatePolynomial::evaluate_fft::<F>(&polynomial_b(), 1, 1,  Some(4), Some(4)).unwrap();
-            // println!("a_evals: {:?}, {:?}", polynomial_a(), a_evals);
+
             let mul_eval = a_evals * b_evals ;
-            println!("mul_eval{:?}", mul_eval);
+
             let mul_poly = BivariatePolynomial::interpolate_fft::<F>(&mul_eval).unwrap();
             
             assert_eq!(mul_poly, a_times_b);
@@ -310,6 +495,120 @@ mod tests {
 
             assert_eq!(polynomial_j(), poly_a_after_fft_ifft);
         }
+        
+        #[test]
+        fn test_coset_division() {
 
+            // 4 x^3 y^4 + 2 x^3 y^3 + 4 x^3 y + 2 x^3 + 3 x^2 y^3 + x^2 y^2 + 3 x^2 y + x^2 - 4 x y^4 - 2 x y^3 - 4 x y - 2 x - 3 y^3 - y^2 - 3 y - 1
+
+            use lambdaworks_math::field::fields::u64_prime_field::{FE17,F17};
+            // (x^4 - 1) (x^2 y + 4 x y^2 + 2 x y + x + 3) is equal to 
+            // x^6 y + 4 x^5 y^2 + 2 x^5 y + x^5 + 3 x^4 - x^2 y - 4 x y^2 - 2 x y - x - 3 
+            // x^6 y + 4 x^5 y^2 + 2 x^5 y + x^5 + 3 x^4 - x^2 y - 4 x y^2 - 2 x y - x - 3  => degree 6,2
+            // (-3 , -1 , 0, 0, 3 , 1 ), (0 , -2, -1, 0 ,0 , 2, 1), (0 , -4, 0,0,0, 4)
+            let r_x_m2_n2 = BivariatePolynomial::new(array![
+                [-FE17::new(3), -FE17::new(1),  FE17::new(0), FE17::new(0), FE17::new(3), FE17::new(1), FE17::new(0), FE17::new(0)],
+                [ FE17::new(0), -FE17::new(2), -FE17::new(1), FE17::new(0), FE17::new(0), FE17::new(2), FE17::new(1), FE17::new(0)],
+                [ FE17::new(0), -FE17::new(4),  FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(4), FE17::new(0), FE17::new(0)],
+                [ FE17::new(0),  FE17::new(0),  FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+            ]);
+            // println!("{:?}" , q_x_poly.polynomial_dimension());
+            // println!("{}" , q_x_poly);
+
+
+            // 4 x y^3 + 2 x y^2 - 4 x y - 2 x + 3 y^3 + y^2 - 3 y - 1
+            // (1 + 2x + 3y + 4xy) (y^2-1)
+            // (-1, -2 , 0 ) , (-3, -4, 0) , (1 , 2 , 0), (3, 4, 0)
+            // Simplified: 4 x y^3 - 4 x y + 2 x + 3 y + 1 = (1 + 2x + 3y + 4xy) (y^2-1)
+            let r_y_m2_n2 = BivariatePolynomial::new(array![
+                [-FE17::new(1),  -FE17::new(2), FE17::new(0), FE17::new(0)],
+                [-FE17::new(3),  -FE17::new(4), FE17::new(0), FE17::new(0)],
+                [ FE17::new(1),   FE17::new(2), FE17::new(0), FE17::new(0)],
+                [ FE17::new(3),   FE17::new(4), FE17::new(0), FE17::new(0)],
+            ]);
+
+
+            let p = &r_x_m2_n2 + &r_y_m2_n2; 
+
+            let (q_y, q_x) = BivariatePolynomial::coset_division::<F17>(&p, 4, 2).unwrap();
+
+            
+            // 3 + X + 2*X*Y + X^2*Y + 4*X*Y^2
+            // x^2 y + 4 x y^2 + 2 x y + x + 3
+            let q_x_expected = BivariatePolynomial::new(array![
+                [FE17::new(3), FE17::new(1), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(2), FE17::new(1), FE17::new(0)],
+                [FE17::new(0), FE17::new(4), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+
+            ]);
+            // println!("{}", q_x_expected);
+            assert_eq!(q_x_expected, q_x);
+
+
+
+            // (1 + 2x + 3y + 4xy)
+            let q_y_expected = BivariatePolynomial::new(array![
+                [FE17::new(1), FE17::new(2), FE17::new(0), FE17::new(0)],
+                [FE17::new(3), FE17::new(4), FE17::new(0), FE17::new(0)],
+            ]);
+            assert_eq!(q_y_expected, q_y );
+
+
+            // n>2 . m=2 
+
+            // 4 x y^6 + 2 x y^5 + 3 y^5 - 4 x y^4 + y^4 + 2 x y^3 + 2 x y^2 - 4 x y - 3 y - 2 x - 1
+            // (1 + 2x + 3y + 4xy + y² + 2xy³ + 3y³ + 4xy⁴ ) (y^2 -1)
+            let r_y_m2_n_greater_than_2 = BivariatePolynomial::new(array![
+                [-FE17::new(1),  -FE17::new(2), FE17::new(0), FE17::new(0)],
+                [-FE17::new(3),  -FE17::new(4), FE17::new(0), FE17::new(0)],
+                [ FE17::new(0),   FE17::new(2), FE17::new(0), FE17::new(0)],
+                [ FE17::new(0),   FE17::new(2), FE17::new(0), FE17::new(0)],
+                [ FE17::new(1),  -FE17::new(4), FE17::new(0), FE17::new(0)],
+                [ FE17::new(3),   FE17::new(2), FE17::new(0), FE17::new(0)],
+                [ FE17::new(0),   FE17::new(4), FE17::new(0), FE17::new(0)],
+                [ FE17::new(0),   FE17::new(0), FE17::new(0), FE17::new(0)],
+
+            ]);
+
+
+            
+            let p = &r_x_m2_n2 + &r_y_m2_n_greater_than_2;
+
+            let (q_y , q_x)= BivariatePolynomial::coset_division::<F17>(&p, 4, 2).unwrap();
+
+            // 3 + X + 2*X*Y + X^2*Y + 4*X*Y^2
+            // x^2 y + 4 x y^2 + 2 x y + x + 3
+            let q_x_expected = BivariatePolynomial::new(array![
+                [FE17::new(3), FE17::new(1), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(2), FE17::new(1), FE17::new(0)],
+                [FE17::new(0), FE17::new(4), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+
+            ]);
+            assert_eq!(q_x_expected, q_x);
+
+           // 1 + 2*X + 3*Y + 4*X*Y + Y^2 + 3*Y^3 + 2*X*Y^3 + 4*X*Y^4
+            let q_y_expected = BivariatePolynomial::new(array![
+                [FE17::new(1), FE17::new(2), FE17::new(0), FE17::new(0)],
+                [FE17::new(3), FE17::new(4), FE17::new(0), FE17::new(0)],
+                [FE17::new(1), FE17::new(0), FE17::new(0), FE17::new(0)],
+                [FE17::new(3), FE17::new(2), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(4), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+                [FE17::new(0), FE17::new(0), FE17::new(0), FE17::new(0)],
+            ]);
+            assert_eq!(q_y, q_y_expected);
+        }
     }
-}
+
+
+
+
+
+}   
