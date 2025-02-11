@@ -1,50 +1,21 @@
 use icicle_bls12_381::polynomials::DensePolynomial;
+use std::ops::Neg;
 use icicle_core::ntt::{
     ntt, NTTConfig, NTTDir, initialize_domain, get_root_of_unity, NTTInitDomainConfig
 };
 use icicle_core::polynomials::UnivariatePolynomial;
 use icicle_core::traits::FieldImpl;
 use icicle_bls12_381::curve::ScalarField;
+
 use icicle_runtime::memory::{DeviceVec, HostOrDeviceSlice, HostSlice};
 use icicle_runtime::Device;
 use ndarray::Array2;
 
 use super::dense_ext::DensePolynomialExt;
 use super::bipolynomial::BivariatePolynomial;
+use icicle_core::traits::Arithmetic;
 
 pub type NTTError = &'static str;
-
-// #[derive(Debug)]
-// enum NTTErrorDetail {
-//     SizeExceeded {
-//         size: usize,
-//         max_allowed: usize,
-//     },
-//     MemoryAllocation {
-//         required_size: usize,
-//     },
-//     InvalidInput {
-//         details: String,
-//     },
-//     TransformFailed {
-//         details: String,
-//     },
-//     DeviceError {
-//         details: String,
-//     },
-// }
-
-// impl NTTErrorDetail {
-//     fn to_str(&self) -> &'static str {
-//         match self {
-//             Self::SizeExceeded { .. } => "Size exceeded maximum allowed",
-//             Self::MemoryAllocation { .. } => "Memory allocation failed",
-//             Self::InvalidInput { .. } => "Invalid input",
-//             Self::TransformFailed { .. } => "Transform failed",
-//             Self::DeviceError { .. } => "Device error",
-//         }
-//     }
-// }
 
 struct DeviceBuffer<T> {
     buffer: DeviceVec<T>,
@@ -97,9 +68,9 @@ impl DeviceBuffer<ScalarField> {
 
 impl<T> Drop for DeviceBuffer<T> {
     fn drop(&mut self) {
-        println!("Starting to drop DeviceBuffer with size: {}", self.size);
+        // println!("Starting to drop DeviceBuffer with size: {}", self.size);
         self.size = 0;
-        println!("DeviceBuffer dropped");
+        // println!("DeviceBuffer dropped");
     }
 }
 
@@ -108,7 +79,7 @@ fn perform_ntt(
     direction: NTTDir,
     device_buffer: &mut DeviceBuffer<ScalarField>,
 ) -> Result<Vec<ScalarField>, NTTError> {
-    println!("Starting perform_ntt with input size: {}", input.len());
+    // println!("Starting perform_ntt with input size: {}", input.len());
 
     // runtime::load_backend_from_env_or_default().unwrap();
     let device = Device::new("CPU", 0);
@@ -126,15 +97,15 @@ fn perform_ntt(
     let mut output = vec![ScalarField::zero(); input.len()];
     let output_slice = HostSlice::from_mut_slice(&mut output);
     
-    println!("Copying input to device buffer");
+    // println!("Copying input to device buffer");
     device_buffer.copy_from_host(input)?;
     
-    println!("Starting NTT computation");
+    // println!("Starting NTT computation");
     // 중간 호스트 버퍼 생성
     let mut host_buffer = vec![ScalarField::zero(); device_buffer.size];
     device_buffer.copy_to_host(HostSlice::from_mut_slice(&mut host_buffer))?;
     
-    println!("Performing NTT transform");
+    // println!("Performing NTT transform");
     ntt(
         HostSlice::from_slice(&host_buffer),
         direction,
@@ -145,11 +116,20 @@ fn perform_ntt(
         "NTT transform failed"
     })?;
     
-    println!("Copying result back to host");
+    // println!("Copying result back to host");
     device_buffer.copy_to_host(output_slice)?;
     
-    println!("perform_ntt completed successfully");
+    // println!("perform_ntt completed successfully");
     Ok(output)
+}
+struct MyScalarField(ScalarField);
+
+impl Neg for MyScalarField {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        MyScalarField(ScalarField::zero() - self.0)
+    }
 }
 
 impl BivariatePolynomial {
@@ -334,6 +314,186 @@ impl BivariatePolynomial {
     
         Ok(Self::new(result))
     }
+
+    pub fn evaluate_offset_fft(
+        &self,
+        x_blowup_factor: usize,
+        y_blowup_factor: usize,
+        domain_x_size: Option<usize>,
+        domain_y_size: Option<usize>,
+        offset_x: &ScalarField,
+        offset_y: &ScalarField,
+    ) -> Result<Vec<DensePolynomial>, NTTError> {
+        // Scale the polynomial first
+        let scaled = self.scale(offset_x, offset_y);
+        
+        // Then evaluate using normal FFT
+        scaled.evaluate_ntt(x_blowup_factor, y_blowup_factor, domain_x_size, domain_y_size)
+    }
+
+    pub fn poly_multiply(
+        a: &BivariatePolynomial,
+        b: &BivariatePolynomial,
+        result_x_dim: usize,
+        result_y_dim: usize,
+    ) -> Result<Self, NTTError> {
+        // Evaluate both polynomials
+        let a_evals = a.evaluate_ntt(1, 1, Some(result_x_dim), Some(result_y_dim))?;
+        let b_evals = b.evaluate_ntt(1, 1, Some(result_x_dim), Some(result_y_dim))?;
+
+        // Multiply point-wise
+        let mut c_evals = Vec::with_capacity(a_evals.len());
+        for (a_eval, b_eval) in a_evals.iter().zip(b_evals.iter()) {
+            let mut c_row = Vec::with_capacity(a_eval.get_coefficients().len());
+            for (a_coeff, b_coeff) in a_eval.get_coefficients().iter().zip(b_eval.get_coefficients().iter()) {
+                c_row.push(*a_coeff * *b_coeff);
+            }
+            c_evals.push(DensePolynomial::from_coeffs(
+                HostSlice::from_slice(&c_row),
+                c_row.len()
+            ));
+        }
+
+        // Interpolate the result
+        Self::interpolate_ntt(&c_evals)
+    }
+
+    pub fn coset_division(
+        bipoly: &BivariatePolynomial,
+        degree_x: usize,
+        degree_y: usize
+    ) -> Result<(Self, Self), NTTError> {
+        if bipoly.x_degree % degree_x != 0 || bipoly.y_degree % degree_y != 0 {
+            return Err("Polynomial degrees must be divisible by given degrees");
+        }
+
+        let m = bipoly.x_degree / degree_x;
+        let n = bipoly.y_degree / degree_y;
+
+        let xi = ScalarField::from_u32(3);
+        let zeta = ScalarField::from_u32(5);
+
+        match (m, n) {
+            (2, 2) => {
+                // A' 계산
+                let mut a_prim_coeffs = Vec::new();
+                for i in 0..degree_y {
+                    let mut row = Vec::new();
+                    for j in 0..degree_x {
+                        let mut segment_sum = ScalarField::zero();
+                        for y in 0..n {
+                            for x in 0..m {
+                                if let Some(row) = bipoly.coefficients.get(y * degree_y + i) {
+                                    if let Some(coeff) = row.get_coefficients().get(x * degree_x + j) {
+                                        segment_sum = segment_sum + xi.pow(y) * (*coeff);
+                                    }
+                                }
+                            }
+                        }
+                        row.push(segment_sum);
+                    }
+                    a_prim_coeffs.push(row);
+                }
+
+                let a_prim = BivariatePolynomial::new(a_prim_coeffs);
+                let mut r_tilde_evals = a_prim.evaluate_offset_fft(
+                    1, 1, None, None, 
+                    &ScalarField::one(), &xi
+                )?;
+
+                // inverse 연산 수정
+                let divisor = xi.pow(degree_y) - ScalarField::one();
+                let divisor_inv = divisor.inv();
+                
+                let mut q_z_evals = Vec::new();
+                for eval in r_tilde_evals.iter() {
+                    let coeffs = eval.get_coefficients();
+                    let scaled: Vec<_> = coeffs.iter()
+                        .map(|c| *c * divisor_inv)
+                        .collect();
+                    q_z_evals.push(DensePolynomial::from_coeffs(
+                        HostSlice::from_slice(&scaled),
+                        scaled.len()
+                    ));
+                }
+
+                let q_z = BivariatePolynomial::interpolate_ntt(&q_z_evals)?;
+
+                // 계수 변환 수정
+                let mut remainder_coeffs = Vec::new();
+                for row in q_z.coefficients.iter() {
+                    let mut new_row = Vec::new();
+                    for coeff in row.get_coefficients() {
+                        // 음수 연산 수정
+                        let neg_coeff = ScalarField::zero() - coeff.clone();
+                        new_row.push(neg_coeff);
+                    }
+                    remainder_coeffs.push(new_row);
+                }
+
+                let remainder = BivariatePolynomial::new(remainder_coeffs);
+                let b = bipoly.subtract(&remainder)?;
+
+                let mut b_prim_coeffs = Vec::new();
+                for i in 0..n * degree_y {
+                    let mut row = Vec::new();
+                    for j in 0..degree_x {
+                        let mut segment_sum = ScalarField::zero();
+                        for x in 0..m {
+                            if let Some(b_row) = b.coefficients.get(i) {
+                                if let Some(coeff) = b_row.get_coefficients().get(x * degree_x + j) {
+                                    segment_sum = segment_sum + zeta.pow(x) * (*coeff);
+                                }
+                            }
+                        }
+                        row.push(segment_sum);
+                    }
+                    b_prim_coeffs.push(row);
+                }
+
+                let b_prim = BivariatePolynomial::new(b_prim_coeffs);
+                let mut q_x_evals = b_prim.evaluate_offset_fft(
+                    1, 1, None, None, 
+                    &zeta, &ScalarField::one()
+                )?;
+
+                // inverse 연산 수정
+                let divisor = zeta.pow(degree_x) - ScalarField::one();
+                let divisor_inv = divisor.inv();
+
+                let mut scaled_evals = Vec::new();
+                for eval in q_x_evals.iter() {
+                    let coeffs = eval.get_coefficients();
+                    let scaled: Vec<_> = coeffs.iter()
+                        .map(|c| *c * divisor_inv)
+                        .collect();
+                    scaled_evals.push(DensePolynomial::from_coeffs(
+                        HostSlice::from_slice(&scaled),
+                        scaled.len()
+                    ));
+                }
+
+                let q_x = BivariatePolynomial::interpolate_ntt(&scaled_evals)?;
+
+                Ok((q_z, q_x))
+            },
+            _ => Err("Unsupported degrees combination")
+        }
+    }
+
+    fn subtract(&self, other: &Self) -> Result<Self, NTTError> {
+        let mut result_coeffs = Vec::new();
+        for (self_row, other_row) in self.coefficients.iter().zip(other.coefficients.iter()) {
+            let mut row = Vec::new();
+            for (self_coeff, other_coeff) in self_row.get_coefficients().iter()
+                .zip(other_row.get_coefficients().iter()) {
+                row.push(*self_coeff - *other_coeff);
+            }
+            result_coeffs.push(row);
+        }
+        Ok(Self::new(result_coeffs))
+    }
+    
 }
 
 
@@ -632,7 +792,85 @@ mod tests {
             Err(e) => println!("Full interpolation failed: {}", e)
         }
     }
-    
 
-    
+    #[test]
+    fn test_coset_division_m2_n2() {
+        // x_degree = 2, y_degree = 2인 다항식 생성
+        let rows = vec![
+            vec![ScalarField::from_u32(1), ScalarField::from_u32(2), ScalarField::from_u32(3)],
+            vec![ScalarField::from_u32(4), ScalarField::from_u32(5), ScalarField::from_u32(6)],
+            vec![ScalarField::from_u32(7), ScalarField::from_u32(8), ScalarField::from_u32(9)],
+        ];
+        let poly = BivariatePolynomial::new(rows);
+
+        // x_degree와 y_degree 확인
+        assert_eq!(poly.x_degree, 2);  // x_degree가 2인지 확인
+        assert_eq!(poly.y_degree, 2);  // y_degree가 2인지 확인
+
+        // 차수가 제대로 나누어떨어지는지 확인
+        assert_eq!(poly.x_degree % 2, 0);
+        assert_eq!(poly.y_degree % 2, 0);
+
+        let (q_z, q_x) = BivariatePolynomial::coset_division(&poly, 2, 2)
+            .expect("Coset division failed");
+
+        // 결과 출력
+        println!("q_z coefficients:");
+        for row in q_z.coefficients.iter() {
+            println!("{:?}", row.get_coefficients());
+        }
+
+        println!("q_x coefficients:");
+        for row in q_x.coefficients.iter() {
+            println!("{:?}", row.get_coefficients());
+        }
+
+        // 차수 확인
+        assert!(q_z.x_degree <= poly.x_degree);
+        assert!(q_z.y_degree <= poly.y_degree);
+        assert!(q_x.x_degree <= poly.x_degree);
+        assert!(q_x.y_degree <= poly.y_degree);
+    }
+
+    #[test]
+    fn test_coset_division_m2_n4() {
+        // y_degree가 4인 다항식 생성
+        let rows = vec![
+            vec![ScalarField::from_u32(1), ScalarField::from_u32(2), ScalarField::from_u32(0)],
+            vec![ScalarField::from_u32(3), ScalarField::from_u32(4), ScalarField::from_u32(0)],
+            vec![ScalarField::from_u32(5), ScalarField::from_u32(6), ScalarField::from_u32(0)],
+            vec![ScalarField::from_u32(7), ScalarField::from_u32(8), ScalarField::from_u32(0)],
+            vec![ScalarField::from_u32(9), ScalarField::from_u32(10), ScalarField::from_u32(0)],
+        ];
+        let poly = BivariatePolynomial::new(rows);
+
+        // x_degree와 y_degree 확인
+        assert_eq!(poly.x_degree, 2);  // x_degree가 2인지 확인
+        assert_eq!(poly.y_degree, 4);  // y_degree가 4인지 확인
+
+        // 차수가 제대로 나누어떨어지는지 확인
+        assert_eq!(poly.x_degree % 2, 0);
+        assert_eq!(poly.y_degree % 4, 0);
+
+        let (q_z, q_x) = BivariatePolynomial::coset_division(&poly, 2, 4)
+            .expect("Coset division failed");
+
+        // 결과 출력
+        println!("q_z coefficients:");
+        for row in q_z.coefficients.iter() {
+            println!("{:?}", row.get_coefficients());
+        }
+
+        println!("q_x coefficients:");
+        for row in q_x.coefficients.iter() {
+            println!("{:?}", row.get_coefficients());
+        }
+
+        // 차수 확인
+        assert!(q_z.x_degree <= poly.x_degree);
+        assert!(q_z.y_degree <= poly.y_degree);
+        assert!(q_x.x_degree <= poly.x_degree);
+        assert!(q_x.y_degree <= poly.y_degree);
+    }
 }
+    
