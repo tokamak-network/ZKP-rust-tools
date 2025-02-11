@@ -1,8 +1,12 @@
-# Use the specified base image
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
+# # Use the specified base image
+# FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
+
+# Use Ubuntu as base image (No CUDA)
+FROM ubuntu:22.04
 
 # Update and install dependencies
 RUN apt-get update && apt-get install -y \
+    bash \
     cmake \
     protobuf-compiler \
     curl \
@@ -11,6 +15,9 @@ RUN apt-get update && apt-get install -y \
     clang \
     libclang-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# 기본 프롬프트 변경
+RUN echo 'export PS1="\w\$ "' >> /root/.bashrc
 
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -28,4 +35,4 @@ WORKDIR /app
 COPY . .
 
 # Specify the default command for the container
-CMD ["/bin/bash"]
+CMD ["bash"]

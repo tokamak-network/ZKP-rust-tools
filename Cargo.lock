@@ -412,6 +412,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "icicle-bn254"
+version = "3.3.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+dependencies = [
+ "cmake",
+ "icicle-core",
+ "icicle-hash",
+ "icicle-runtime",
+]
+
+[[package]]
 name = "icicle-core"
 version = "3.3.0"
 source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
@@ -470,6 +481,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af150ab688ff2122fcef229be89cb50dd66af9e01a4ff320cc137eecc9bacc38"
 
 [[package]]
+name = "jake"
+version = "0.1.0"
+dependencies = [
+ "const-random",
+ "criterion",
+ "iai-callgrind",
+ "icicle-bls12-377",
+ "icicle-bls12-381",
+ "icicle-bn254",
+ "icicle-core",
+ "icicle-runtime",
+ "lambdaworks-math",
+ "ndarray",
+ "num-traits",
+ "proptest",
+ "rand",
+ "rand_chacha",
+ "rayon",
+ "rustyline",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -485,29 +520,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
  "cpufeatures",
-]
-
-[[package]]
-name = "lambdaworks-crypto"
-version = "0.10.0"
-source = "git+https://github.com/lambdaclass/lambdaworks.git#2787f65bb47d31cc6eca5597846c1b0f6da3056d"
-dependencies = [
- "lambdaworks-math",
- "sha2",
- "sha3",
-]
-
-[[package]]
-name = "lambdaworks-groth16"
-version = "0.10.0"
-source = "git+https://github.com/lambdaclass/lambdaworks.git#2787f65bb47d31cc6eca5597846c1b0f6da3056d"
-dependencies = [
- "lambdaworks-crypto",
- "lambdaworks-math",
- "rand",
- "rand_chacha",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1327,21 +1339,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
-name = "zkp-rust-tools-batch-groth16"
-version = "0.1.0"
-dependencies = [
- "lambdaworks-groth16",
- "lambdaworks-math",
- "lazy_static",
- "ndarray",
- "rand",
- "rand_chacha",
- "serde",
- "serde_json",
- "zkp-rust-tools-math",
-]
-
-[[package]]
 name = "zkp-rust-tools-crypto"
 version = "0.1.0"
 dependencies = [
@@ -1350,7 +1347,6 @@ dependencies = [
  "icicle-bls12-381",
  "icicle-core",
  "icicle-runtime",
- "lambdaworks-groth16",
  "lambdaworks-math",
  "ndarray",
  "num-bigint",
@@ -1375,7 +1371,6 @@ dependencies = [
  "icicle-bls12-381",
  "icicle-core",
  "icicle-runtime",
- "lambdaworks-groth16",
  "lambdaworks-math",
  "ndarray",
  "num-traits",

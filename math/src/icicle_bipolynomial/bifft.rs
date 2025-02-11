@@ -13,6 +13,10 @@ use super::bipolynomial::BivariatePolynomial;
 
 pub type NTTError = &'static str;
 
+use icicle_bls12_377::curve::{CurveCfg, G1Projective, ScalarCfg};
+use icicle_core::{curve::Curve, msm, msm::MSMConfig, traits::GenerateRandom};
+use icicle_runtime::{device::Device, memory::HostSlice};
+
 /// DeviceBuffer: GPU 메모리 관리를 위한 래퍼
 struct DeviceBuffer<T> {
     buffer: DeviceVec<T>,

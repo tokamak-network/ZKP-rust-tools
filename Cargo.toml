@@ -1,7 +1,7 @@
 [workspace]
 
-members = ["math", "crypto","prover/batch_groth16"]
-exclude = ["ensure-no_std"]
+members = ["math", "crypto", "jake"]
+exclude = ["ensure-no_std","prover/batch_groth16"]
 resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
