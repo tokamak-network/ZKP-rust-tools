@@ -3,10 +3,10 @@ use icicle_core::ntt::{
     ntt, NTTConfig, NTTDir, initialize_domain, get_root_of_unity, NTTInitDomainConfig
 };
 use icicle_core::polynomials::UnivariatePolynomial;
-use icicle_core::traits::{Arithmetic, FieldImpl};
+use icicle_core::traits::FieldImpl;
 use icicle_bls12_381::curve::ScalarField;
 use icicle_runtime::memory::{DeviceVec, HostOrDeviceSlice, HostSlice};
-use icicle_runtime::{runtime, Device};
+use icicle_runtime::Device;
 use ndarray::Array2;
 
 use super::dense_ext::DensePolynomialExt;
@@ -14,37 +14,37 @@ use super::bipolynomial::BivariatePolynomial;
 
 pub type NTTError = &'static str;
 
-#[derive(Debug)]
-enum NTTErrorDetail {
-    SizeExceeded {
-        size: usize,
-        max_allowed: usize,
-    },
-    MemoryAllocation {
-        required_size: usize,
-    },
-    InvalidInput {
-        details: String,
-    },
-    TransformFailed {
-        details: String,
-    },
-    DeviceError {
-        details: String,
-    },
-}
+// #[derive(Debug)]
+// enum NTTErrorDetail {
+//     SizeExceeded {
+//         size: usize,
+//         max_allowed: usize,
+//     },
+//     MemoryAllocation {
+//         required_size: usize,
+//     },
+//     InvalidInput {
+//         details: String,
+//     },
+//     TransformFailed {
+//         details: String,
+//     },
+//     DeviceError {
+//         details: String,
+//     },
+// }
 
-impl NTTErrorDetail {
-    fn to_str(&self) -> &'static str {
-        match self {
-            Self::SizeExceeded { .. } => "Size exceeded maximum allowed",
-            Self::MemoryAllocation { .. } => "Memory allocation failed",
-            Self::InvalidInput { .. } => "Invalid input",
-            Self::TransformFailed { .. } => "Transform failed",
-            Self::DeviceError { .. } => "Device error",
-        }
-    }
-}
+// impl NTTErrorDetail {
+//     fn to_str(&self) -> &'static str {
+//         match self {
+//             Self::SizeExceeded { .. } => "Size exceeded maximum allowed",
+//             Self::MemoryAllocation { .. } => "Memory allocation failed",
+//             Self::InvalidInput { .. } => "Invalid input",
+//             Self::TransformFailed { .. } => "Transform failed",
+//             Self::DeviceError { .. } => "Device error",
+//         }
+//     }
+// }
 
 struct DeviceBuffer<T> {
     buffer: DeviceVec<T>,
@@ -336,17 +336,15 @@ impl BivariatePolynomial {
     }
 }
 
-// ------------------------------------------------------------------------
-// 테스트
-// ------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
-    use crate::icicle_bipolynomial;
+    
 
     use super::*;
     use icicle_core::ntt::{get_root_of_unity, initialize_domain, NTTInitDomainConfig};
-    use icicle_runtime::{runtime, Device};
-    use core::cmp::min;
+    use icicle_runtime::Device;
+    
     use std::sync::Once;
 
     static INIT: Once = Once::new();
