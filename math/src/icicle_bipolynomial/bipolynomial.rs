@@ -1,15 +1,11 @@
-// src/icicle_bipolynomial/bipolynomial.rs
-
 use icicle_bls12_381::curve::ScalarField;
 use icicle_core::{polynomials::UnivariatePolynomial, traits::FieldImpl};
 use icicle_bls12_381::polynomials::DensePolynomial;
 use icicle_runtime::memory::HostSlice;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Sub, Mul};
 
 use super::dense_ext::DensePolynomialExt;
 
-/// 이변수 다항식(2D). 내부적으로 여러 개의 `DensePolynomial`(단변수 다항식)을
-/// y방향으로 쌓아둠. 즉, coefficients[i] = (단변수 in x) * y^i
 pub struct BivariatePolynomial {
     pub coefficients: Vec<DensePolynomial>,
     pub x_degree: usize,
@@ -17,9 +13,6 @@ pub struct BivariatePolynomial {
 }
 
 impl BivariatePolynomial {
-    /// 새 이차 다항식 생성
-    /// rows: 각 y^i 행에 대해 x방향의 계수를 담은 벡터
-    /// 예: rows[i][j] = (coefficient for x^j * y^i)
     pub fn new(rows: Vec<Vec<ScalarField>>) -> Self {
         let y_degree = rows.len().saturating_sub(1);
         let x_degree = rows
@@ -47,7 +40,6 @@ impl BivariatePolynomial {
         }
     }
 
-    /// 0 이차 다항식
     pub fn zero() -> Self {
         let z = vec![ScalarField::zero()];
         BivariatePolynomial {
@@ -59,7 +51,7 @@ impl BivariatePolynomial {
         }
     }
 
-    fn dense_poly_new_monomial(c: ScalarField, deg: usize) -> DensePolynomial {
+    fn _dense_poly_new_monomial(c: ScalarField, deg: usize) -> DensePolynomial {
         let mut cf = vec![ScalarField::zero(); deg+1];
         cf[deg] = c;
         DensePolynomial::from_coeffs(
@@ -68,7 +60,7 @@ impl BivariatePolynomial {
         )
     }
 
-    fn dense_poly_zero() -> DensePolynomial {
+    fn _dense_poly_zero() -> DensePolynomial {
         let cf = vec![ScalarField::zero()];
         DensePolynomial::from_coeffs(
             HostSlice::from_slice(&cf),
@@ -161,7 +153,7 @@ impl BivariatePolynomial {
         // x_degree 하나 줄인 몫 bivariate
         let x_degree = self.x_degree.saturating_sub(1);
         let mut normalized_rows = Vec::new();
-        for mut row in q_xy_rows {
+        for row in q_xy_rows {
             let mut cfs = row.get_coefficients();
             while cfs.len() <= x_degree {
                 cfs.push(ScalarField::zero());
@@ -183,7 +175,7 @@ impl BivariatePolynomial {
         ))
     }
 
-    /// (x_factor, y_factor)로 스케일링
+    /// scale to (x_factor, y_factor)
     ///  = Σ_i [ (RowPoly in x) * (x_factor^j) * (y_factor^i) ]
     pub fn scale(&self, x_factor: &ScalarField, y_factor: &ScalarField) -> Self {
         let mut scaled_coeffs = Vec::with_capacity(self.coefficients.len());
@@ -220,9 +212,37 @@ impl BivariatePolynomial {
     }
 }
 
-// ------------------------------------------------------------------------
-// 연산자 오버로드(Add, Sub)를 통해 이차 다항식 덧셈/뺄셈
-// ------------------------------------------------------------------------
+impl Mul for BivariatePolynomial {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> BivariatePolynomial {
+        // 결과 다항식의 차수 계산
+        let result_x_degree = self.x_degree + other.x_degree;
+        let result_y_degree = self.y_degree + other.y_degree;
+
+        // 결과 계수를 담을 벡터 초기화
+        let mut result_coeffs = vec![DensePolynomial::zero(); result_y_degree + 1];
+
+        // 모든 항의 곱셈을 수행
+        for i in 0..=self.y_degree {
+            for j in 0..=other.y_degree {
+                // y^(i+j) 항의 계수가 될 x에 대한 다항식 계산
+                let prod = &self.coefficients[i] * &other.coefficients[j];
+                
+                // y^(i+j) 항에 더함
+                let k = i + j;
+                result_coeffs[k] = result_coeffs[k].add_polynomial(&prod);
+            }
+        }
+
+        BivariatePolynomial {
+            coefficients: result_coeffs,
+            x_degree: result_x_degree,
+            y_degree: result_y_degree,
+        }
+    }
+}
+
 impl Add for BivariatePolynomial {
     type Output = Self;
 
@@ -255,7 +275,6 @@ impl Sub for BivariatePolynomial {
             let spoly = self.coefficients.get(i).unwrap_or(&zero_poly);
             let opoly = other.coefficients.get(i).unwrap_or(&zero_poly);
 
-            // opoly에 -1을 곱해서 spoly와 add
             let neg_opoly = opoly.scale(&ScalarField::zero().sub(ScalarField::one())); // -1
             result_coeffs.push(spoly.add_polynomial(&neg_opoly));
         }
