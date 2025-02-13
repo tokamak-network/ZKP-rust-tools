@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     git \
     clang \
     libclang-dev \
+    lldb \
     && rm -rf /var/lib/apt/lists/*
 
 # 기본 프롬프트 변경
@@ -22,6 +23,8 @@ RUN echo 'export PS1="\w\$ "' >> /root/.bashrc
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
+
+
 
 # Install Golang
 ENV GOLANG_VERSION 1.21.1

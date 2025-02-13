@@ -5,8 +5,10 @@ use icicle_bls12_381::curve::{ScalarField, ScalarCfg};
 use icicle_core::traits::{FieldImpl, FieldConfig, GenerateRandom};
 use icicle_core::polynomials::UnivariatePolynomial;
 use icicle_core::{ntt, ntt::NTTInitDomainConfig};
+use icicle_core::vec_ops::{VecOps, VecOpsConfig};
 use icicle_bls12_381::polynomials::DensePolynomial;
 use icicle_runtime::memory::{HostOrDeviceSlice, HostSlice, DeviceSlice, DeviceVec};
+use std::ops::Deref;
 use std::{
     clone, cmp,
     ops::{Add, AddAssign, Div, Mul, Rem, Sub},
@@ -27,7 +29,7 @@ impl DensePolynomialExt {
     // Inherit DensePolynomial
     pub fn print(&self) {
         unsafe {
-            &self.poly.print()
+            self.poly.print()
         }
     }
     // Inherit DensePolynomial
@@ -174,12 +176,13 @@ impl BivariatePolynomial for DensePolynomialExt {
 
             ntt::initialize_domain::<Self::Field>(_ntt_rou, &_ntt_dom_config).unwrap();
 
-            let mut ntt_result = DeviceVec::<Self::Field>::device_malloc(x_size as usize * y_size as usize).unwrap();
+            let mut ntt_result = DeviceVec::device_malloc(_x_size * _y_size).unwrap();
+            
             // FFT along X
             let mut cfg = ntt::NTTConfig::<Self::Field>::default();
             cfg.batch_size = y_size as i32;
             cfg.columns_batch = false;
-            ntt::ntt_inplace(&mut ntt_result, ntt::NTTDir::kForward, &cfg).unwrap();
+            ntt::ntt(evals, ntt::NTTDir::kForward, &cfg, &mut ntt_result).unwrap();
             cfg.batch_size = x_size as i32;
             cfg.columns_batch = true;
             ntt::ntt_inplace(&mut ntt_result, ntt::NTTDir::kForward, &cfg).unwrap();
@@ -292,10 +295,10 @@ impl BivariatePolynomial for DensePolynomialExt {
 }
 
 fn main() {
-    let x_size = 3;
+    let x_size = 4;
     let y_size = 2;
     let size = x_size * y_size;
-    let coeffs_vec = ScalarCfg::generate_random(size);
+    let mut coeffs_vec = vec![ScalarField::one(); size];
     let coeffs = HostSlice::from_slice(&coeffs_vec);
     let mut evals = DeviceVec::<ScalarField>::device_malloc(size).unwrap();
 
@@ -313,7 +316,7 @@ fn main() {
     // Computing NTT columns batch
     ntt::ntt(
         coeffs,
-        ntt::NTTDir::kForward,
+        ntt::NTTDir::kInverse,
         &cfg,
         &mut evals,
     )
@@ -328,20 +331,29 @@ fn main() {
     let mut evals2 = DeviceVec::<ScalarField>::device_malloc(size).unwrap();
     ntt::ntt(
         &evals,
-        ntt::NTTDir::kForward,
+        ntt::NTTDir::kInverse,
         &cfg,
         &mut evals2,
     )
     .unwrap();
-    
+
     let poly1 = DensePolynomialExt::from_coeffs(coeffs, x_size, y_size);
     let poly2 = DensePolynomialExt::from_rou_evals(&evals2, x_size, y_size);
 
+    let mut coeff1_vec = vec![ScalarField::zero(); size];
+    let mut coeff2_vec = vec![ScalarField::zero(); size];
+    let coeff1 = HostSlice::from_mut_slice(&mut coeff1_vec);
+    let coeff2 = HostSlice::from_mut_slice(&mut coeff2_vec);
+    poly1.copy_coeffs(0, coeff1);
+    poly2.copy_coeffs(0, coeff2);
+    println!("coeffs = {:?}", coeff1_vec);
+    println!("evals2 = {:?}", coeff2_vec);
+    
     let x = ScalarCfg::generate_random(1)[0];
     let y = ScalarCfg::generate_random(1)[0];
 
     let eval1 = poly1.eval(&x, &y);
     let eval2 = poly2.eval(&x, &y);
     
-    println!("eval result = {:?}", ScalarField::eq(&eval1, &eval2))
+    println!("eval result = {:?}", ScalarField::eq(&eval1, &eval2));
 }

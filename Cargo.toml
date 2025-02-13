@@ -1,8 +1,14 @@
-[workspace]
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
 
-members = ["math", "jake"]
-exclude = ["ensure-no_std"]
+[package]
+name = "jake"
+version = "0.1.0"
+edition = "2021"
 
-resolver = "2"
+[dependencies]
+icicle-runtime = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.4.0", package = "icicle-runtime" }
+icicle-core = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.4.0", package = "icicle-core" }
+icicle-bls12-381 = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.4.0", package = "icicle-bls12-381" }
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

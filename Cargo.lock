@@ -81,20 +81,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "icicle-bls12-377"
-version = "3.3.0"
-source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
-dependencies = [
- "cmake",
- "icicle-core",
- "icicle-hash",
- "icicle-runtime",
-]
-
-[[package]]
 name = "icicle-bls12-381"
-version = "3.3.0"
-source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+version = "3.4.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.4.0#cb1cdcb37c7a10f1b19e29d28be4f6d39ac68f06"
 dependencies = [
  "cmake",
  "icicle-core",
@@ -104,8 +93,8 @@ dependencies = [
 
 [[package]]
 name = "icicle-core"
-version = "3.3.0"
-source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+version = "3.4.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.4.0#cb1cdcb37c7a10f1b19e29d28be4f6d39ac68f06"
 dependencies = [
  "hex",
  "icicle-runtime",
@@ -116,8 +105,8 @@ dependencies = [
 
 [[package]]
 name = "icicle-hash"
-version = "3.3.0"
-source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+version = "3.4.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.4.0#cb1cdcb37c7a10f1b19e29d28be4f6d39ac68f06"
 dependencies = [
  "cmake",
  "icicle-core",
@@ -127,8 +116,8 @@ dependencies = [
 
 [[package]]
 name = "icicle-runtime"
-version = "3.3.0"
-source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.3.0#9d2e73bde911f301f6d88d720da25b19a11d09a8"
+version = "3.4.0"
+source = "git+https://github.com/ingonyama-zk/icicle.git?tag=v3.4.0#cb1cdcb37c7a10f1b19e29d28be4f6d39ac68f06"
 dependencies = [
  "cmake",
  "once_cell",
@@ -136,7 +125,7 @@ dependencies = [
 
 [[package]]
 name = "jake"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "icicle-bls12-381",
  "icicle-core",
@@ -280,14 +269,4 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "zkp-rust-tools-math"
-version = "0.0.0"
-dependencies = [
- "icicle-bls12-377",
- "icicle-bls12-381",
- "icicle-core",
- "icicle-runtime",
 ]

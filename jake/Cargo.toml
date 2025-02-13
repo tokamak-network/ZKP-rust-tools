@@ -1,7 +1,0 @@
-[package]
-name = "jake"
-
-[dependencies]
-icicle-runtime = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.3.0", package = "icicle-runtime" }
-icicle-core = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.3.0", package = "icicle-core" }
-icicle-bls12-381 = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.3.0", package = "icicle-bls12-381" }
