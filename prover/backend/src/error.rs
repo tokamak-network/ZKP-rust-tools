@@ -1,6 +1,7 @@
 
 use derive_more::From;
 
+
 pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug, From)]
@@ -22,6 +23,12 @@ pub enum Error {
     // -- Externals
     #[from]
     Io(std::io::Error), // as example
+    #[from]
+    SerderJson(serde_json::Error),
+
+    #[from]
+    FFTError(lambdaworks_math::fft::errors::FFTError),
+
 
     #[from]
     LambdaConversion(lambdaworks_math::errors::ByteConversionError),
@@ -30,6 +37,7 @@ pub enum Error {
     LambdaHexConversion(lambdaworks_math::errors::CreationError),
     #[from]
     WaserInstansiation(wasmer::InstantiationError),
+
 }
 
 // region:    --- Custom

@@ -273,12 +273,29 @@ mod runtime {
 #[cfg(test)]
 mod tests {
     use std::vec;
-    use super:: * ;
+    use crate::permutaion::PlacementInstance;
 
+    use super:: * ;
+    use std::fs;
+    use serde_json::{from_str, Value};
+    
     #[tokio::test]
     async fn test_wasm() {
-        let wasm = Wasm::new(30, "./subcircuits/wasm").unwrap();
+        let mut wasm = Wasm::new(30, "./subcircuits/wasm").unwrap();
         // wasm.calculate_witness(placements)
+
+        let content = fs::read_to_string("./synthesizer/placementInstance.json").expect("Failed to read file");
+
+        let placements : Vec<PlacementInstance> = from_str(&content).expect("failed to parse json");
+
+        let witnesses = wasm.calculate_witness(&placements).expect("failed to calculate witness");
+        #[cfg(debug_assertions)]
+        for (i,witness) in witnesses.iter().enumerate() {
+
+            println!("{:?} , {:?}", i, witness.len())
+        }
+
+
     }
 
 

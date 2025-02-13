@@ -24,3 +24,4 @@ tokio = "1.43.0"
 wasmer = "5.0.0"
 wasmer-wasix = "0.33.0"
 # bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git", features= ['serde'] }
+ndarray = { version = "0.16.1", default-features = false }
