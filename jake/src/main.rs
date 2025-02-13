@@ -1,8 +1,12 @@
+extern crate icicle_bls12_381;
+extern crate icicle_core;
+extern crate icicle_runtime;
 use icicle_bls12_381::curve::{ScalarField, ScalarCfg};
 use icicle_core::traits::{FieldImpl, FieldConfig, GenerateRandom};
+use icicle_core::polynomials::UnivariatePolynomial;
 use icicle_core::{ntt, ntt::NTTInitDomainConfig};
 use icicle_bls12_381::polynomials::DensePolynomial;
-use icicle_runtime::memory::{HostOrDeviceSlice, HostSlice, DeviceSlice};
+use icicle_runtime::memory::{HostOrDeviceSlice, HostSlice, DeviceSlice, DeviceVec};
 use std::{
     clone, cmp,
     ops::{Add, AddAssign, Div, Mul, Rem, Sub},
@@ -11,10 +15,10 @@ use std::{
 
 pub struct DensePolynomialExt {
     pub poly: DensePolynomial,
-    pub x_degree: usize,
-    pub y_degree: usize,
-    pub x_size: usize,
-    pub y_size: usize,
+    pub x_degree: i64,
+    pub y_degree: i64,
+    pub x_size: u64,
+    pub y_size: u64,
     ntt_rou: ScalarField,
     ntt_dom_config: NTTInitDomainConfig
 }
@@ -23,18 +27,18 @@ impl DensePolynomialExt {
     // Inherit DensePolynomial
     pub fn print(&self) {
         unsafe {
-            &self.poly.print();
+            &self.poly.print()
         }
     }
     // Inherit DensePolynomial
     pub fn coeffs_mut_slice(&mut self) -> &mut DeviceSlice<ScalarField> {
         unsafe {
-            &mut self.coeffs_mut_slice()
+            self.coeffs_mut_slice()          
         }
     }
 
     // Method to get the degree of the polynomial.
-    pub fn degree(&self) -> Vec<usize> {
+    pub fn degree(&self) -> Vec<i64> {
         vec![self.x_degree, self.y_degree]
     }
 }
@@ -131,15 +135,18 @@ impl BivariatePolynomial for DensePolynomialExt {
     type Field = ScalarField;
     type FieldConfig = ScalarCfg;
 
-    fn from_coeffs<S: HostOrDeviceSlice<Self::Field> + ?Sized>(coeffs: &S, x_size: usize, y_size: usize) -> Self {
+    fn from_coeffs<S: HostOrDeviceSlice<Self::Field> + ?Sized>(coeffs: &S, _x_size: usize, _y_size: usize) -> Self {
         unsafe{
-            let _poly = DensePolynomial::from_coeffs(coeffs, x_size * y_size);
-            let mut _x_degree: usize = 0;
-            let mut _y_degree: usize = 0;
+            let x_size = _x_size as u64;
+            let y_size = _y_size as u64;
+
+            let poly = DensePolynomial::from_coeffs(coeffs, x_size as usize * y_size as usize);
+            let mut _x_degree: u64 = 0;
+            let mut _y_degree: u64 = 0;
 
             for x_offset in (0 .. x_size).rev() {
-                let sub_poly_y = _poly.slice(x_offset, x_size, y_size);
-                _y_degree = sub_poly_y.degree() as usize;
+                let sub_poly_y = poly.slice(x_offset, x_size, y_size);
+                _y_degree = sub_poly_y.degree() as u64;
                 if _y_degree > 0 {
                     _x_degree = x_offset;
                     break;
@@ -147,44 +154,54 @@ impl BivariatePolynomial for DensePolynomialExt {
             }
 
             Self{
-                poly: _poly,
-                x_degree: _x_degree,
-                y_degree: _y_degree,
+                poly,
+                x_degree: _x_degree as i64,
+                y_degree: _y_degree as i64,
                 x_size,
                 y_size,
-                ntt_rou: ntt::get_root_of_unity::<Field>(
-                    (x_size * y_size).try_into()
-                        .unwrap(),
-                ),
+                ntt_rou: ntt::get_root_of_unity::<Self::Field>( x_size * y_size ),
                 ntt_dom_config: NTTInitDomainConfig::default()
             }
         }
     }
 
-    fn from_rou_evals<S: HostOrDeviceSlice<Self::Field> + ?Sized>(evals: &S, x_size: usize, y_size: usize) -> Self {
+    fn from_rou_evals<S: HostOrDeviceSlice<Self::Field> + ?Sized>(evals: &S, _x_size: usize, _y_size: usize) -> Self {
         unsafe{
-            let _ntt_rou = ntt::get_root_of_unity::<Field>(
-                (x_size * y_size).try_into()
-                    .unwrap(),
-            );
+            let x_size = _x_size as u64;
+            let y_size = _y_size as u64;
+            let _ntt_rou = ntt::get_root_of_unity::<Self::Field>( x_size * y_size );
             let _ntt_dom_config = NTTInitDomainConfig::default();
 
-            ntt::initialize_domain::<Field>(_ntt_rou, &_ntt_dom_config).unwrap();
+            ntt::initialize_domain::<Self::Field>(_ntt_rou, &_ntt_dom_config).unwrap();
 
-            let mut ntt_result = evals.clone();
+            let mut ntt_result = DeviceVec::<Self::Field>::device_malloc(x_size as usize * y_size as usize).unwrap();
             // FFT along X
-            let mut cfg = ntt::NTTConfig::<Field>::default();
-            cfg.batch_size = y_size;
+            let mut cfg = ntt::NTTConfig::<Self::Field>::default();
+            cfg.batch_size = y_size as i32;
             cfg.columns_batch = false;
             ntt::ntt_inplace(&mut ntt_result, ntt::NTTDir::kForward, &cfg).unwrap();
-            cfg.batch_size = x_size;
+            cfg.batch_size = x_size as i32;
             cfg.columns_batch = true;
             ntt::ntt_inplace(&mut ntt_result, ntt::NTTDir::kForward, &cfg).unwrap();
 
+            let poly = DensePolynomial::from_coeffs(&ntt_result, x_size as usize * y_size as usize);
+
+            let mut _x_degree: u64 = 0;
+            let mut _y_degree: u64 = 0;
+
+            for x_offset in (0 .. x_size).rev() {
+                let sub_poly_y = poly.slice(x_offset, x_size, y_size);
+                _y_degree = sub_poly_y.degree() as u64;
+                if _y_degree > 0 {
+                    _x_degree = x_offset;
+                    break;
+                }
+            }
+
             Self{
-                poly: DensePolynomial::from_coeffs(ntt_result, x_size, y_size),
-                x_degree: _x_degree,
-                y_degree: _y_degree,
+                poly,
+                x_degree: _x_degree as i64,
+                y_degree: _y_degree as i64,
                 x_size,
                 y_size,
                 ntt_rou: _ntt_rou,
@@ -198,53 +215,56 @@ impl BivariatePolynomial for DensePolynomialExt {
     }
 
     fn eval_x(&self, x: &Self::Field) -> Self {
-        let mut coef_slice = vec![Field::zero(), self.x_size * self.y_size];
+        let mut coef_slice = vec![Self::Field::zero(); self.x_size as usize * self.y_size as usize];
         let mut coeffs = HostSlice::from_mut_slice(&mut coef_slice);
-        self.copy_coeffs(0, &mut coeffs);
+        self.copy_coeffs(0, coeffs);
 
-        let x_size = self.x_degree + 1;
-        let y_size = self.y_degree + 1;
-        let mut result_slice = vec![Field::zero(), y_size];
+        let x_size = self.x_degree as usize + 1;
+        let y_size = self.y_degree as usize + 1;
+        let mut result_slice = vec![Self::Field::zero(); y_size];
         let mut result = HostSlice::from_mut_slice(&mut result_slice);
 
         for offset in 0..y_size {
-            let sub_xpoly_coef_slice = coef_slice[offset*x_size .. (offset+1)*x_size];
+            let sub_xpoly_coef_slice = &coef_slice[offset*x_size .. (offset+1)*x_size];
             let sub_xpoly = DensePolynomial::from_coeffs(HostSlice::from_slice(&sub_xpoly_coef_slice), x_size); 
-            result_slice[offset] = sub_xpoly.eval(x);
+            result[offset] = sub_xpoly.eval(x);
         }
 
         Self {
-            poly: DensePolynomial::from_coeffs(result),
+            poly: DensePolynomial::from_coeffs(result, y_size),
             x_degree: 0,
             y_degree: self.y_degree.clone(),
             x_size: 1,
-            y_size,
+            y_size: y_size as u64,
             ntt_rou: self.ntt_rou.clone(),
             ntt_dom_config: self.ntt_dom_config.clone(),
         }
     }
 
     fn eval_y(&self, y: &Self::Field) -> Self {
-        let mut coef_slice = vec![Field::zero(), self.x_size * self.y_size];
+        let mut coef_slice = vec![Self::Field::zero(); self.x_size as usize * self.y_size as usize];
         let mut coeffs = HostSlice::from_mut_slice(&mut coef_slice);
-        self.copy_coeffs(0, &mut coeffs);
+        self.copy_coeffs(0, coeffs);
 
-        let x_size = self.x_degree + 1;
-        let y_size = self.y_degree + 1;
-        let mut result_slice = vec![Field::zero(), x_size];
+        let x_size = self.x_degree as usize + 1;
+        let y_size = self.y_degree as usize + 1;
+        let mut result_slice = vec![Self::Field::zero(); x_size];
         let mut result = HostSlice::from_mut_slice(&mut result_slice);
 
         for offset in 0..x_size {
-            let sub_ypoly_coef_slice = coef_slice.slice(offset, x_size, y_size);
+            let sub_ypoly_coef_slice: Vec<_> = coef_slice
+                .chunks_exact(x_size)
+                .map(|chunk| chunk[offset]) 
+                .collect();
             let sub_ypoly = DensePolynomial::from_coeffs(HostSlice::from_slice(&sub_ypoly_coef_slice), y_size); 
-            result_slice[offset] = sub_ypoly.eval(y);
+            result[offset] = sub_ypoly.eval(y);
         }
 
         Self {
-            poly: DensePolynomial::from_coeffs(result),
+            poly: DensePolynomial::from_coeffs(result, x_size),
             x_degree: self.x_degree.clone(),
             y_degree: 0,
-            x_size,
+            x_size: x_size as u64,
             y_size: 1,
             ntt_rou: self.ntt_rou.clone(),
             ntt_dom_config: self.ntt_dom_config.clone(),
@@ -275,21 +295,19 @@ fn main() {
     let x_size = 3;
     let y_size = 2;
     let size = x_size * y_size;
-    let coeffs = HostSlice::from_slice(&ScalarCfg::generate_random(size));
-    let mut evals = coeffs.clone();
+    let coeffs_vec = ScalarCfg::generate_random(size);
+    let coeffs = HostSlice::from_slice(&coeffs_vec);
+    let mut evals = DeviceVec::<ScalarField>::device_malloc(size).unwrap();
 
     ntt::initialize_domain::<ScalarField>(
-        ntt::get_root_of_unity::<ScalarField>(
-            size.try_into()
-                .unwrap(),
-        ),
+        ntt::get_root_of_unity::<ScalarField>(size as u64),
         &ntt::NTTInitDomainConfig::default(),
     )
     .unwrap();
 
     // Using default config
     let mut cfg = ntt::NTTConfig::<ScalarField>::default();
-    cfg.batch_size = y_size;
+    cfg.batch_size = y_size as i32;
     cfg.columns_batch = false;
 
     // Computing NTT columns batch
@@ -303,20 +321,21 @@ fn main() {
 
     // Using default config
     let mut cfg = ntt::NTTConfig::<ScalarField>::default();
-    cfg.batch_size = x_size;
+    cfg.batch_size = x_size as i32;
     cfg.columns_batch = true;
 
     // Computing NTT columns batch
+    let mut evals2 = DeviceVec::<ScalarField>::device_malloc(size).unwrap();
     ntt::ntt(
-        evals.clone(),
+        &evals,
         ntt::NTTDir::kForward,
         &cfg,
-        &mut evals,
+        &mut evals2,
     )
     .unwrap();
     
     let poly1 = DensePolynomialExt::from_coeffs(coeffs, x_size, y_size);
-    let poly2 = DensePolynomialExt::from_rou_evals(evals, x_size, y_size);
+    let poly2 = DensePolynomialExt::from_rou_evals(&evals2, x_size, y_size);
 
     let x = ScalarCfg::generate_random(1)[0];
     let y = ScalarCfg::generate_random(1)[0];

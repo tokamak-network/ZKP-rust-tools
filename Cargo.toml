@@ -6,8 +6,3 @@ exclude = ["ensure-no_std"]
 resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-icicle-runtime = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.3.0" }
-icicle-core = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.3.0" }
-icicle-bls12-381 = { git = "https://github.com/ingonyama-zk/icicle.git", tag = "v3.3.0" }
