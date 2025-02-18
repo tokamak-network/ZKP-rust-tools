@@ -181,6 +181,7 @@ dependencies = [
  "tokio",
  "wasmer",
  "wasmer-wasix",
+ "zkp-rust-tools-math",
 ]
 
 [[package]]

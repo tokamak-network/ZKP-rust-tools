@@ -39,6 +39,11 @@ pub fn generate_proof(wasm :& mut Wasm ,args: GenerateProofArgs, subcircuit_lib 
     let placements : Vec<PlacementInstance> = from_str(&content)?;
     let witnesses = wasm.calculate_witness(&placements)?;
 
+    // d_i(y) 0<i<m_d
+    let d_i_ys = subcircuit_lib.create_dy(witnesses, &placements)?;
+
+
+
 
     todo!()
 }

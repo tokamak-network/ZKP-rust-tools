@@ -21,7 +21,7 @@ fn main() {
 
     let mut wasm = Wasm::new(30, "./subcircuits/wasm").expect("failed to read wasm files");
 
-    let subcircuit_info_lib = SubcircuitLibraryInfo::new("./synthesizer/globalwire.json" , "./synthesizer/subcircuitInfo.json").expect("failed to read synthesizer initialize values");
+    let subcircuit_info_lib = SubcircuitLibraryInfo::new("./synthesizer/globalwire.json" , "./synthesizer/subcircuitInfo.json",8192, "./subcircuits/r1cs").expect("failed to read synthesizer initialize values");
 
 
     let args = BackendArgs::parse();

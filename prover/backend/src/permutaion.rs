@@ -12,9 +12,12 @@ use wasmer::{Store, Module, Instance, imports};
 
 use serde::{Deserialize,Serialize};
 use serde_json::{Value as JsonValue, from_str};
-use crate::error::Error;
+use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
+use crate::{error::Error, qap::SubcircuitQAP};
 
 use crate::wasm::Wasm;
+
+use crate::qap::SubcircuitR1CS;
 
 const wasm_dir :&str = "subcircuits/wasm";
 
@@ -75,6 +78,10 @@ pub struct SubcircuitLibraryInfo {
     // with flatten map object we can creat general d_i for 0<i<s_max
     pub subcircuit_infos : Vec<SubcircuitInfo>,
 
+
+    // qap list contains all u(x) , v(x) , w(x) univariate polynomials .
+    pub qap_list : Vec<SubcircuitQAP>,
+
     
 }
 #[derive(Serialize, Deserialize,Debug)]
@@ -107,13 +114,17 @@ struct GlobalWire {
 
 impl SubcircuitLibraryInfo { 
 
-    pub fn new(global_wire_path :&str , subcircuit_info_path :&str) -> Result<Self,Error> {
+    pub fn new(global_wire_path :&str , subcircuit_info_path :&str ,max_constraint :usize, r1cs_file_path :&str) -> Result<Self,Error> {
         
         let global_wire_content = fs::read_to_string(global_wire_path)?;
         let global_wire : GlobalWire = from_str(&global_wire_content)?;   
 
-        let subcircuit_wire_content = fs::read_to_string(global_wire_path)?;
+        let subcircuit_wire_content = fs::read_to_string(subcircuit_info_path)?;
         let subcircuit_infos : Vec<SubcircuitInfo> = from_str(&subcircuit_wire_content)?;   
+    
+    
+        let subcircuit_r1cs_list = SubcircuitR1CS::from_path(max_constraint, subcircuit_infos.len(), r1cs_file_path).expect("read r1cs failed");
+        let qap_list = SubcircuitQAP::from_r1cs(subcircuit_r1cs_list).expect("qap conversion failed");
 
 
         Ok(SubcircuitLibraryInfo{
@@ -121,12 +132,22 @@ impl SubcircuitLibraryInfo {
             l_d :global_wire.l_d,
             m_d :global_wire.m_d,
             wire_list :global_wire.wire_list,
-            subcircuit_infos,
+            subcircuit_infos: subcircuit_infos,
+            qap_list : qap_list,
         })
 
     }
 
+    // this function is necessary to calculate [U]_1
+    pub fn create_sum_of_d_j_y_times_u_j_x()-> Result<BivariatePolynomial<FrElement>,Error> {
+        
+        
+        todo!()
+    }
 
+    // in this function the placement instance should be imported and we create d_i(y) 0<i<m_d
+    // from the placement we have input and output of jth subcircuit that is invoked . 0<j<s_max
+    // each d_i(y) is a interpolation of a vector with lenght of s_max. 
     pub fn create_dy(&self, witnesses :Vec<Vec<FrElement>> ,placement_instances :&[PlacementInstance])
     -> Result<Vec<UnivariatePolynomial<FrElement>> ,Error>
     {
@@ -139,9 +160,6 @@ impl SubcircuitLibraryInfo {
         let mut matrix = vec![vec![FrElement::zero(); s_max]; self.m_d];
 
 
-        // in this function the placement instance should be imported and we create d_i(y) 0<i<m_d
-        // from the placement we have input and output of jth subcircuit that is invoked . 0<j<s_max
-        // each d_i(y) is a interpolation of a vector with lenght of s_max. 
         for i in 0..s_max{
             let subcircuit_id = placement_instances[i].subcircuit_id;
             for (j, witness) in witnesses[i].iter().enumerate(){

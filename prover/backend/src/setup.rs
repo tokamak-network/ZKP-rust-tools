@@ -1,14 +1,34 @@
-﻿use lambdaworks_groth16::common::G1Point;
+﻿use lambdaworks_groth16::common::{G1Point, G2Point};
 use ndarray::{Array2, Array3, concatenate, Axis,s};
+use wasmer_wasix::types::wasi::Errno;
+use zkp_rust_tools_math::bipolynomial::BivariatePolynomial;
 
+use lambdaworks_math::{
+    cyclic_group::IsGroup,
+    elliptic_curve::{
+        short_weierstrass::{
+            curves::bls12_381::{
+                curve::BLS12381Curve,
+                default_types::{FrConfig, FrElement, FrField},
+                pairing::BLS12381AtePairing,
+                twist::BLS12381TwistCurve,
+            },
+            point::ShortWeierstrassProjectivePoint,
+        },
+        traits::{IsEllipticCurve, IsPairing},
+    },
+    msm::pippenger::msm,
 
+};
+
+use crate::error::Error;
 
 #[derive(Clone, Debug)]
-pub struct Sigma<G1Point, G2Point> {
-    pub sigma_a_i :Sigma_A_I<G1Point>, 
-    pub sigma_c : Sigma_C<G1Point>, 
-    pub sigma_zk :Sigma_ZK<G1Point>,
-    pub sigma_v : Sigma_V<G2Point>,
+pub struct Sigma<'a , G1Point, G2Point> {
+    pub sigma_a_i:Sigma_A_I<G1Point>, 
+    pub sigma_c : Box<Sigma_C<G1Point>>, 
+    pub sigma_zk :&'a Sigma_ZK<G1Point>,
+    pub sigma_v : &'a Sigma_V<G2Point>,
 }
 
 #[derive(Clone, Debug)]
@@ -81,4 +101,47 @@ pub struct Sigma_V<G2Point>{
     pub mu_3_psi_2_y_i_z_j :Vec<G2Point>,//i ∈ ⟦0, 1⟧, j ∈ ⟦0, 1⟧
     pub mu_3_psi_3_y_i_z_j :Vec<G2Point>,//i ∈ ⟦0, 1⟧, j ∈ ⟦0, 1⟧
 
+}
+
+
+impl Sigma<'_ ,<BLS12381AtePairing as IsPairing>::G1Point,
+            <BLS12381AtePairing as IsPairing>::G2Point > 
+{   
+
+    // input of this function is d_j(y) * u_j(x) as a bivariate polynimial , 
+    pub fn calculate_u1(&self ,poly :&BivariatePolynomial<FrElement>)-> Result<G1Point, Error> {
+        // I assume that the dimensions of poly and sigma match, so we don't need flattening
+        let coefficients_x_y: Vec<_> = poly.flatten_out()
+            .iter()
+            .map(|coefficient| coefficient.representative())
+            .collect();
+
+        let mut result = msm(
+            &coefficients_x_y,
+            // self.sigma_a_i.x_h_y_i.into_raw_vec_and_offset().0,
+            &self.sigma_a_i.x_h_y_i.clone().into_raw_vec_and_offset().0,
+        )?;
+        result = result.operate_with(&self.sigma_a_i.alpha);
+        Ok(result)
+    }
+
+    
+    // input of this function is d_j(y) * u_j(x) as a bivariate polynimial , 
+    pub fn calculate_v2(&self, poly: BivariatePolynomial<FrElement>) -> Result<G2Point,Error> {
+        // I assume that the dimensions of poly and sigma match, so we don't need flattening
+        let coefficients_x_y: Vec<_> = poly.flatten_out()
+            .iter()
+            .map(|coefficient| coefficient.representative())
+            .collect();
+        let mut result = msm(
+            &coefficients_x_y,
+            // self.sigma_a_i.x_h_y_i.into_raw_vec_and_offset().0,
+            &self.sigma_v.x_h_y_i.clone().into_raw_vec_and_offset().0,
+        )?;
+        result = result.operate_with(&self.sigma_v.beta);
+        Ok(result)        
+    }
+
+
+    // pub fn 
 }

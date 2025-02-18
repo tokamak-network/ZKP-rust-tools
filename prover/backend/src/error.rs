@@ -28,7 +28,8 @@ pub enum Error {
 
     #[from]
     FFTError(lambdaworks_math::fft::errors::FFTError),
-
+    #[from]
+    MSMError(lambdaworks_math::msm::naive::MSMError),
 
     #[from]
     LambdaConversion(lambdaworks_math::errors::ByteConversionError),
@@ -37,6 +38,8 @@ pub enum Error {
     LambdaHexConversion(lambdaworks_math::errors::CreationError),
     #[from]
     WaserInstansiation(wasmer::InstantiationError),
+
+
 
 }
 

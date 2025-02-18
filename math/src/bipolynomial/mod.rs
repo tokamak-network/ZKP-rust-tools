@@ -300,7 +300,18 @@ impl<F: IsField> BivariatePolynomial<FieldElement<F>> {
 
     // TODO :: create a new function which recieve 2 univariate polynomial and multiply them together and create a bivariate polynomial 
     pub fn compose_from_univariate(F_X: UnivariatePolynomial<FieldElement<F>>, F_Y: UnivariatePolynomial<FieldElement<F>>) -> Self {
-        todo!()
+
+        let mut result_coeffs = Array2::<FieldElement<F>>::default((F_Y.degree(), F_X.degree()));
+
+        for (i, mut row) in result_coeffs.axis_iter_mut(Axis(0)).enumerate() {
+            let y_scalar = F_Y.coefficients.get(i).unwrap();
+            for j in 0..row.len() {
+                row[j] = y_scalar * F_X.coefficients.get(j).unwrap();
+            }
+        }
+        BivariatePolynomial{ coefficients: result_coeffs, x_degree: F_X.degree(), y_degree: F_Y.degree() }
+
+        // return  result_coeffs;
     }
 
 

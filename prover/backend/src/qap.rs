@@ -12,14 +12,14 @@ use lambdaworks_math::unsigned_integer::element::UnsignedInteger;
 use serde_json::{Value, from_str};
 use std::{fs, ops::Sub, result, vec};
 use ndarray::{s, Array, Array2, Axis};
-
+#[derive(Debug)]
 pub struct SubcircuitQAP{
     // pub subcircuit_id :usize, 
     pub u :Vec<UnivariatePolynomial<FrElement>>,
     pub v :Vec<UnivariatePolynomial<FrElement>>,
     pub w :Vec<UnivariatePolynomial<FrElement>>,
 }
-// 
+#[derive(Debug)]
 pub struct SubcircuitR1CS {
     // pub subcircuit_id :usize, 
 
@@ -122,4 +122,23 @@ impl SubcircuitQAP {
 fn circom_str_to_lambda_field_element(value: &str) -> FrElement {
     FrElement::from(&UnsignedInteger::<4>::from_dec_str(value).unwrap())
 }
+#[cfg(test)]
+mod tests {
+    use std::vec;
 
+    use lambdaworks_groth16::qap;
+
+    use super::*;
+
+    #[test]
+    fn test_qap_generation() {
+        let subcircuit_r1cs_list = SubcircuitR1CS::from_path(8192, 30, "./subcircuits/r1cs").expect("read r1cs failed");
+        let qap_list = SubcircuitQAP::from_r1cs(subcircuit_r1cs_list).expect("qap conversion failed");
+
+
+        let add_subcircuit_qap = qap_list.get(2).expect("problem in qap"); 
+
+    }
+
+
+}
