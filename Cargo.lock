@@ -175,6 +175,7 @@ dependencies = [
  "lambdaworks-groth16",
  "lambdaworks-math",
  "ndarray",
+ "rayon",
  "serde",
  "serde_json",
  "thiserror 2.0.11",

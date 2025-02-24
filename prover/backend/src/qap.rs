@@ -10,15 +10,26 @@ use lambdaworks_math::{
 use lambdaworks_math::unsigned_integer::element::UnsignedInteger;
 
 use serde_json::{Value, from_str};
-use std::{fs, ops::Sub, result, vec};
+use std::{clone, default, fs, ops::Sub, result, vec};
 use ndarray::{s, Array, Array2, Axis};
-#[derive(Debug)]
+
+use std::sync::Mutex;
+
+
+
+use rayon::{iter::ParallelIterator, prelude::{IndexedParallelIterator, IntoParallelRefIterator}};
+#[derive(Debug,Clone)]
 pub struct SubcircuitQAP{
     // pub subcircuit_id :usize, 
     pub u :Vec<UnivariatePolynomial<FrElement>>,
     pub v :Vec<UnivariatePolynomial<FrElement>>,
     pub w :Vec<UnivariatePolynomial<FrElement>>,
 }
+
+
+
+
+
 #[derive(Debug)]
 pub struct SubcircuitR1CS {
     // pub subcircuit_id :usize, 
@@ -31,7 +42,7 @@ pub struct SubcircuitR1CS {
 impl SubcircuitR1CS {
     pub fn from_path(max_constraint :usize, subcircuit_cnt :usize, r1cs_file_path :&str) -> Result<Vec<SubcircuitR1CS>,Error> {
 
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(subcircuit_cnt);
 
         for subcircuit_id in 0..subcircuit_cnt{
 
@@ -73,7 +84,7 @@ impl SubcircuitR1CS {
                 }
             }
 
-            result.push(SubcircuitR1CS{
+            result.push( SubcircuitR1CS{
                 a : l,
                 b : r, 
                 c : o,
@@ -89,31 +100,53 @@ impl SubcircuitR1CS {
 
 // max
 impl SubcircuitQAP {
-    pub fn from_r1cs(r1cs_list :Vec<SubcircuitR1CS>) -> Result<Vec<SubcircuitQAP>,Error> {
+    pub fn default_vec(capacity :usize) -> Vec<SubcircuitQAP> {
+
+        vec![ SubcircuitQAP { u: Vec::new(), v: Vec::new(), w: Vec::new() } ; capacity]
+
+    }
+
+    pub fn from_r1cs(r1cs_list :Vec<SubcircuitR1CS> ) -> Result<Vec<SubcircuitQAP>,Error> {
         // max_constraint
-        let mut result = Vec::new();
-        for subcircuit_r1cs in r1cs_list.iter(){
-            let mut u_poly = Vec::new();
-            let mut v_poly = Vec::new();
-            let mut w_poly = Vec::new();
+        // let result = Mutex::new(vec![SubcircuitQAP::default(); r1cs_list.len()]);
+        
+        let mut result = Mutex::new(SubcircuitQAP::default_vec(r1cs_list.len()));
+        
+        
+
+        r1cs_list.par_iter().enumerate().for_each(|(id , subcircuit_r1cs)|  {
+            let m_k = subcircuit_r1cs.a.dim().1 ; 
+
+            let mut u_poly = Vec::with_capacity(m_k);
+            let mut v_poly = Vec::with_capacity(m_k);
+            let mut w_poly = Vec::with_capacity(m_k);
+
             for a_row in subcircuit_r1cs.a.axis_iter(Axis(1)) {
-                u_poly.push(UnivariatePolynomial::interpolate_fft::<FrField>(&a_row.to_vec())?);
+                u_poly.push(UnivariatePolynomial::interpolate_fft::<FrField>(&a_row.to_vec()).unwrap());// TODO :: capture error ?? 
             }
             for b_row in subcircuit_r1cs.b.axis_iter(Axis(1)) {
-                v_poly.push(UnivariatePolynomial::interpolate_fft::<FrField>(&b_row.to_vec())?);
+                v_poly.push(UnivariatePolynomial::interpolate_fft::<FrField>(&b_row.to_vec()).unwrap());
             }            
-            for  c_row in subcircuit_r1cs.c.axis_iter(Axis(1)) {
-                w_poly.push(UnivariatePolynomial::interpolate_fft::<FrField>(&c_row.to_vec())?);
+            for c_row in subcircuit_r1cs.c.axis_iter(Axis(1)) {
+                w_poly.push(UnivariatePolynomial::interpolate_fft::<FrField>(&c_row.to_vec()).unwrap());
             }            
-            
-            result.push(SubcircuitQAP{
+
+            let mut res = result.lock().unwrap();
+
+            res[id] = SubcircuitQAP{
                 u :u_poly,
                 v :v_poly,
                 w :w_poly,
-            });
+            };
+            // Ok(())
+
+        });
+        let dd = result.into_inner().unwrap(); 
         
-        }       
-        Ok(result)
+    
+
+
+        Ok(dd)
 
     }
 }
@@ -139,6 +172,8 @@ mod tests {
         let add_subcircuit_qap = qap_list.get(2).expect("problem in qap"); 
 
     }
+
+    
 
 
 }

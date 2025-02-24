@@ -8,6 +8,7 @@ use lambdaworks_math::{
 
 };
 
+use ndarray::NewAxis;
 use wasmer::{Store, Module, Instance, imports};
 
 use serde::{Deserialize,Serialize};
@@ -80,7 +81,7 @@ pub struct SubcircuitLibraryInfo {
 
 
     // qap list contains all u(x) , v(x) , w(x) univariate polynomials .
-    pub qap_list : Vec<SubcircuitQAP>,
+    pub qap_list : Vec<SubcircuitQAP>, // 120k 
 
     
 }
@@ -139,9 +140,30 @@ impl SubcircuitLibraryInfo {
     }
 
     // this function is necessary to calculate [U]_1
-    pub fn create_sum_of_d_j_y_times_u_j_x()-> Result<BivariatePolynomial<FrElement>,Error> {
-        
-        
+    pub fn create_sum_of_d_j_y_times_u_j_x(&self,d_j_list : &Vec<UnivariatePolynomial<FrElement>>)-> Result<BivariatePolynomial<FrElement>,Error> {
+
+        let result = BivariatePolynomial::<FrElement>::zero(); 
+        for (j , d_j) in d_j_list.iter().enumerate() {
+           
+            
+            // let (subcircuit_id ,i_th_wire)=  match self.wire_list.get(j) {
+            //     Some(pair) => Ok(pair), 
+            //     None => Err(Error::custom("couldn't find in wire list")),
+            // }?;
+
+            if let Some((subcircuit_id ,i_th_wire)) = self.wire_list.get(j) {
+
+            };
+
+            // let dd = match self.qap_list.get(*subcircuit_id)  {
+            //     Some(subcircuit_qap) => {
+            //         subcircuit_qap.u.get(i_th_wire)
+            //     }
+            // };
+
+        } 
+
+
         todo!()
     }
 
